@@ -59,6 +59,13 @@ def test_public_metadata_and_installation_name_the_canonical_repository() -> Non
     assert "YOUR_ACCOUNT" not in installation
 
 
+def test_v0_1_0_changelog_has_the_publication_date() -> None:
+    changelog = _text("CHANGELOG.md")
+
+    assert "## 0.1.0 - 2026-11-16" in changelog
+    assert "## 0.1.0 - Unreleased" not in changelog
+
+
 @pytest.mark.parametrize("path", ["README.md", "PRIVACY.md"])
 def test_public_entry_docs_have_no_stale_milestone_claims(path: str) -> None:
     content = _text(path).casefold()

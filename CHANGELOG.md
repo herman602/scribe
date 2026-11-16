@@ -10,10 +10,9 @@ for public releases.
 
 No changes yet.
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-11-16
 
-The first technical self-hosted release. Its date remains `Unreleased` until the
-approved GitHub repository is public and the matching tag exists.
+The first technical self-hosted release.
 
 ### Added
 
