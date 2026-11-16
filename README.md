@@ -1,6 +1,7 @@
 # Scribe
 
-**[Project website](https://scribe-project.andylab.dev)** ·
+**[Project website](https://scribe-project.andylab.dev/en/)** ·
+[繁體中文網站](https://scribe-project.andylab.dev/) ·
 [Installation](docs/installation.md) ·
 [Add a bank parser](docs/adding-bank-parser.md)
 
