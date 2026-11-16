@@ -49,6 +49,7 @@ dev = [
 scribe = "app.presentation.cli.app:main"
 
 [project.urls]
+Homepage = "https://scribe-project.andylab.dev"
 Repository = "https://github.com/herman602/scribe"
 Issues = "https://github.com/herman602/scribe/issues"
 Documentation = "https://github.com/herman602/scribe/tree/main/docs"

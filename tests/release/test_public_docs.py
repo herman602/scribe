@@ -52,6 +52,8 @@ def test_public_metadata_and_installation_name_the_canonical_repository() -> Non
 
     assert urls["Repository"] == "https://github.com/herman602/scribe"
     assert urls["Issues"] == "https://github.com/herman602/scribe/issues"
+    assert urls["Homepage"] == "https://scribe-project.andylab.dev"
+    assert "https://scribe-project.andylab.dev" in _text("README.md")
     installation = _text("docs/installation.md")
     assert "git clone https://github.com/herman602/scribe.git" in installation
     assert "YOUR_ACCOUNT" not in installation

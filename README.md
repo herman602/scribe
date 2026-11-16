@@ -1,5 +1,9 @@
 # Scribe
 
+**[Project website](https://scribe-project.andylab.dev)** ·
+[Installation](docs/installation.md) ·
+[Add a bank parser](docs/adding-bank-parser.md)
+
 Scribe is a local-first Gmail transaction-notification tracker and personal
 money dashboard. It synchronizes only the Gmail scope you configure, extracts
 transaction evidence with deterministic Python parsers, and keeps email,
