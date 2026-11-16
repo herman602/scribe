@@ -9,6 +9,7 @@ from pathlib import Path
 import app.presentation.web.app
 import pytest
 from app.presentation.cli.app import cli
+from click.utils import strip_ansi
 from typer.testing import CliRunner
 
 runner = CliRunner()
@@ -821,8 +822,9 @@ def test_posting_commands_preview_before_they_post(initialized_home: Path) -> No
     for command in ("allocate", "transaction-confirm", "wallet-reallocate"):
         result = runner.invoke(cli, ["money", command, "--help"])
         assert result.exit_code == 0
-        assert "--apply" in result.stdout
-        assert "--dry-run" in result.stdout
+        visible_output = strip_ansi(result.stdout)
+        assert "--apply" in visible_output
+        assert "--dry-run" in visible_output
 
 
 def _identifier(pattern: str, output: str) -> int:
