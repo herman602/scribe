@@ -43,7 +43,7 @@ def test_readme_is_a_complete_but_honest_public_entry_point() -> None:
     assert "technical self-hosters" in readme
     assert "no hosted service" in readme.lower()
     assert "no one-click installer" in readme.lower()
-    assert "docs/assets/dashboard-overview.png" in readme
+    assert "docs/assets/dashboard-overview-en.png" in readme
 
 
 def test_public_metadata_and_installation_name_the_canonical_repository() -> None:
@@ -169,14 +169,13 @@ def test_backup_guide_uses_real_commands_and_explains_exclusive_restore() -> Non
 
 
 def test_public_dashboard_screenshot_is_a_real_large_png() -> None:
-    path = ROOT / "docs/assets/dashboard-overview.png"
+    path = ROOT / "docs/assets/dashboard-overview-en.png"
     content = path.read_bytes()
 
     assert content[:8] == b"\x89PNG\r\n\x1a\n"
     assert content[12:16] == b"IHDR"
     width, height = struct.unpack(">II", content[16:24])
-    assert width >= 720
-    assert height >= 480
+    assert (width, height) == (1440, 900)
 
 
 def test_public_documentation_has_no_broken_relative_links() -> None:

@@ -12,7 +12,7 @@ ledger, budget, subscription, salary-plan, and reconciliation data in a local
 SQLite database. Normal use does not send mailbox or financial content to an
 LLM, analytics service, or Scribe-operated server.
 
-![Synthetic Scribe dashboard](docs/assets/dashboard-overview.png)
+![English Scribe dashboard preview with synthetic test data](docs/assets/dashboard-overview-en.png)
 
 ## Who this release is for
 
