@@ -56,6 +56,7 @@ def test_quality_workflow_is_credential_free_and_runs_every_release_gate() -> No
         "SCRIBE_DATABASE_PATH",
     ):
         assert required in content
+    assert "UV_CACHE_DIR: ${{ runner.temp }}/uv-cache" not in content
 
 
 def test_secret_workflow_fetches_and_scans_full_history_with_redaction() -> None:
