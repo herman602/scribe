@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}對帳 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Reconciliation</p>
+    <h1>對帳</h1>
+    <p class="lede">記下銀行 App 當下顯示的餘額。差額是拿觀測當時的帳本餘額比較，不是今天的餘額。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("observed") %}<p class="notice">已記錄餘額觀測。</p>{% endif %}
+{% if request.query_params.get("adjusted") %}<p class="notice">已記錄差額調整。</p>{% endif %}
+
+<section class="panel">
+  <div class="panel-heading"><h2>記錄銀行餘額</h2></div>
+  <form method="post" action="/money/reconcile/snapshots" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="client_token" value="{{ client_token }}">
+    <label>帳戶
+      <select name="financial_account_id" required>
+        {% for row in view.accounts %}<option value="{{ row.account.id }}">{{ row.account.display_name }}（{{ row.account.currency }}）</option>{% endfor %}
+      </select>
+    </label>
+    <label>銀行顯示的餘額
+      <input name="observed_balance" required inputmode="text" placeholder="可以是 0 或負數">
+    </label>
+    <label>觀測時間
+      <input type="datetime-local" name="observed_at" required value="{{ now_local.strftime('%Y-%m-%dT%H:%M') }}">
+    </label>
+    <label>備註（選填）
+      <input name="note" maxlength="200" autocomplete="off">
+    </label>
+    <button type="submit">記錄觀測</button>
+  </form>
+  <p class="muted">觀測只是證據，不會動到任何餘額，也不能事後修改。</p>
+</section>
+
+<section class="panel" aria-label="各帳戶目前狀態">
+  <div class="panel-heading"><h2>各帳戶</h2></div>
+  <ul class="money-card-list">
+    {% for row in view.accounts %}
+    <li class="money-card{% if row.latest and not row.latest.is_reconciled %} is-warning{% endif %}">
+      <div class="money-card-main">
+        <strong><a href="/money/accounts/{{ row.account.id }}">{{ row.account.display_name }}</a></strong>
+        {% if row.latest %}
+        <small>觀測 {{ row.latest.snapshot.observed_at | local_datetime }} · 銀行 {{ row.latest.snapshot.observed_balance_minor | money(row.account.currency) }} · 帳本當時 {{ row.latest.ledger_balance_minor | money(row.account.currency) }}</small>
+        {% else %}
+        <small>還沒有觀測紀錄</small>
+        {% endif %}
+      </div>
+      <div class="money-card-amount">{{ row.balance_minor | money(row.account.currency) }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="panel" aria-label="觀測紀錄">
+  <div class="panel-heading"><h2>觀測紀錄</h2></div>
+  {% if not view.snapshots %}
+  <p class="muted">還沒有任何觀測。</p>
+  {% else %}
+  {% for row in view.snapshots %}
+  <article class="reconcile-row{% if not row.is_reconciled %} is-warning{% endif %}">
+    <div class="total-grid">
+      <div class="total-block"><span>{{ row.account_display_name }} · 銀行</span><strong>{{ row.snapshot.observed_balance_minor | money(row.currency) }}</strong></div>
+      <div class="total-block"><span>帳本（觀測當時）</span><strong>{{ row.ledger_balance_minor | money(row.currency) }}</strong></div>
+      <div class="total-block"><span>差額</span><strong>{{ row.difference_minor | money(row.currency) }}</strong></div>
+    </div>
+    <p class="muted">{{ row.snapshot.observed_at | local_datetime }} · 來源 {{ row.snapshot.source.value | label }}{% if row.snapshot.note %} · {{ row.snapshot.note }}{% endif %}</p>
+    {% if row.is_reconciled %}
+    <p class="muted">銀行和帳本一致，不需要調整。</p>
+    {% else %}
+    <p class="muted">差額可能只是還沒記錄的異動。先<a href="/money/bank-movements/new">補記那筆異動</a>；真的找不到原因時，才用下面的調整記下來。</p>
+    <form method="post" action="/money/reconcile/{{ row.snapshot.id }}/adjust" class="stacked-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="client_token" value="{{ adjust_token }}-{{ row.snapshot.id }}">
+      <input type="hidden" name="expected_difference" value="{{ row.difference_minor | major(row.currency) }}">
+      <label>原因
+        <input name="reason" required maxlength="200" autocomplete="off" placeholder="例如：找不到來源的小額差異">
+      </label>
+      <button type="submit">記錄這筆差額</button>
+    </form>
+    {% endif %}
+  </article>
+  {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}

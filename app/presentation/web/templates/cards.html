@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}卡片設定 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Local card configuration</p>
+    <h1>卡片設定</h1>
+    <p class="lede">卡片只以銀行加末四碼識別，不會儲存完整卡號或持卡人姓名。這一頁只設定卡片如何結帳，不會建立任何消費。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("created") %}<p class="notice">卡片已新增；請接著設定負債與結帳帳戶。</p>{% endif %}
+{% if request.query_params.get("saved") %}<p class="notice">卡片設定已儲存。</p>{% endif %}
+{% if request.query_params.get("account_created") %}<p class="notice">帳戶已建立；現在可以直接選入卡片設定。</p>{% endif %}
+{% if request.query_params.get("assigned") %}<p class="notice">匯入提示已指派給卡片；原始匯入證據保持不變。</p>{% endif %}
+
+<div class="panel-heading-actions">
+  <a class="button-link" href="/money/accounts/new?type=card_liability&amp;return_to=cards">建立信用卡負債帳戶</a>
+  <a class="button-link" href="/money/accounts/new?type=checking&amp;return_to=cards">建立扣款銀行帳戶</a>
+</div>
+
+<section class="panel" aria-label="新增卡片">
+  <h2>新增卡片</h2>
+  <form method="post" action="/cards">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Gmail 帳號
+      <select name="gmail_account_id" required>
+        {% for account in gmail_accounts %}<option value="{{ account.id }}">{{ account.profile_email }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>銀行代碼
+      <input name="issuer_code" list="issuer-options" placeholder="例如 taishin" required>
+      <datalist id="issuer-options">
+        {% for rule in sender_rules %}<option value="{{ rule.institution_key }}">{{ rule.institution_name }}</option>{% endfor %}
+      </datalist>
+    </label>
+    <label>顯示名稱
+      <input name="display_name" required>
+    </label>
+    <label>末四碼
+      <input name="last_four" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required>
+    </label>
+    <label>持卡人身分
+      <select name="holder_role">
+        {% for role in holder_roles %}<option value="{{ role.value }}">{{ role.value | label }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">新增卡片</button>
+  </form>
+</section>
+
+{% if not cards %}
+<p class="muted">尚未設定任何卡片。可以用 <code>python -m app money cards-backfill</code> 從既有副卡設定建立。</p>
+{% endif %}
+
+{% for view in cards %}
+<section class="panel" aria-label="卡片 {{ view.issuer_name }} {{ view.card.last_four }}">
+  <h2>{{ view.issuer_name }} · ****{{ view.card.last_four }}</h2>
+  <p class="muted">
+    銀行代碼: {{ view.card.issuer_code }} ·
+    狀態: {% if view.card.is_ready %}已完成設定{% else %}尚未完成設定{% endif %}
+    · 負債帳戶: {{ view.liability_account_name or "—" }}
+    · 結帳帳戶: {{ view.settlement_account_name or "—" }}
+    · 預設扣款錢包: {{ view.default_funding_wallet_name or "—" }}
+  </p>
+  {% for assignment in assignments %}
+    {% if assignment.card_id == view.card.id %}
+      {% if assignment.assignment_kind.value == "card_cycle" %}
+      <p class="notice">卡片週期：結帳 {{ assignment.statement_day }} 日 · 繳款 {{ assignment.due_day }} 日 · 自扣 {{ assignment.autopay_day }} 日</p>
+      {% else %}
+      <p class="notice">已承接預約扣款參考（匯入證據 #{{ assignment.import_row_id }}）；尚未建立實際排程。</p>
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+  <form method="post" action="/cards/{{ view.card.id }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ view.card.version }}">
+    <label>顯示名稱
+      <input name="display_name" value="{{ view.card.display_name }}" required>
+    </label>
+    <label>持卡人身分
+      <select name="holder_role">
+        {% for role in holder_roles %}
+          <option value="{{ role.value }}" {% if role == view.card.holder_role %}selected{% endif %}>{{ role.value | label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>負債帳戶（card_liability）
+      <select name="liability_account_id">
+        <option value="">未設定</option>
+        {% for account in accounts %}
+          {% if account.account_type.value == "card_liability" %}
+            <option value="{{ account.financial_account_id }}" {% if account.financial_account_id == view.card.liability_account_id %}selected{% endif %}>{{ account.display_name }} ({{ account.currency }})</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <label>結帳帳戶（資產）
+      <select name="settlement_account_id">
+        <option value="">未設定</option>
+        {% for account in accounts %}
+          {% if account.account_type.value != "card_liability" %}
+            <option value="{{ account.financial_account_id }}" {% if account.financial_account_id == view.card.settlement_account_id %}selected{% endif %}>{{ account.display_name }} ({{ account.currency }})</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <label>預設扣款錢包
+      <select name="default_funding_wallet_id">
+        <option value="">未設定</option>
+        {% for account in accounts %}
+          {% if account.wallets %}
+          <optgroup label="{{ account.display_name }}">
+            {% for wallet in account.wallets %}
+            <option value="{{ wallet.wallet_id }}" {% if wallet.wallet_id == view.card.default_funding_wallet_id %}selected{% endif %}>{{ wallet.name }}</option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">儲存設定</button>
+  </form>
+</section>
+{% endfor %}
+
+<section class="panel" aria-label="匯入的卡片提示">
+  <h2>待承接的匯入提示</h2>
+  <p class="muted">卡片週期會保存成該卡片的設定。預約扣款只保存為參考提示：不會建立排程、不會移動資金，也不代表銀行已執行。</p>
+  {% if not candidates %}
+  <p class="muted">目前沒有待指派的卡片提示。</p>
+  {% else %}
+  <ul class="money-card-list">
+    {% for candidate in candidates %}
+    <li class="money-card import-card-candidate">
+      <div class="money-card-main">
+        <strong>{{ candidate.source_label }}</strong>
+        {% if candidate.kind.value == "card_cycle" %}
+        <small>結帳日 {{ candidate.statement_day }} 日 · 繳款日 {{ candidate.due_day }} 日 · 自扣日 {{ candidate.autopay_day }} 日</small>
+        {% else %}
+        <small>{{ candidate.scheduled_for }} · {{ candidate.amount_minor | money(candidate.currency) }} · 僅作參考</small>
+        {% endif %}
+      </div>
+      {% if cards %}<form method="post" action="/cards/import-candidates/{{ candidate.import_row_id }}/assign">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>指派給
+          <select name="card_id" required>
+            {% for view in cards %}<option value="{{ view.card.id }}">{{ view.issuer_name }} · ****{{ view.card.last_four }}</option>{% endfor %}
+          </select>
+        </label>
+        <button type="submit">承接設定</button>
+      </form>{% else %}<small>請先新增卡片，再回來承接這筆提示。</small>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endblock %}

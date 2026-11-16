@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}小錢包改名 · {{ row.account.display_name }} · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Rename</p>
+    <h1>{{ row.account.display_name }} 的小錢包名稱</h1>
+    <p class="lede">改完按「儲存名稱」，全部一起存，有一個不行就整批不改。同一個帳戶裡不能有兩個小錢包同名，兩個也不能直接互換名稱——要換的話先把其中一個改成別的。</p>
+  </div>
+</section>
+
+<form class="panel" method="post" action="/money/accounts/{{ row.account.id }}/wallets/rename">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <ul class="money-card-list">
+    {% for wallet in row.wallets %}
+    <li class="money-card">
+      <div class="money-card-main">
+        <label class="sr-only" for="name-{{ wallet.wallet_id }}">{{ wallet.name }} 的名稱</label>
+        <input id="name-{{ wallet.wallet_id }}" name="name_{{ wallet.wallet_id }}" value="{{ wallet.name }}" required maxlength="200">
+        <input type="hidden" name="version_{{ wallet.wallet_id }}" value="{{ wallet.version }}">
+        <small>{{ wallet.balance_minor | money(wallet.currency) }}</small>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="money-card-actions">
+    <button type="submit">儲存名稱</button>
+    <a class="button-link" href="/money/accounts/{{ row.account.id }}">取消</a>
+  </div>
+</form>
+{% endblock %}

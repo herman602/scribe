@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}同步 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Local background worker</p>
+    <h1>Gmail 同步</h1>
+    <p class="lede">同步在本機背景執行。關閉 Web Server 會停止 worker，但已 checkpoint 的資料不會遺失。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("started") %}
+<p class="notice">同步工作已送出；建立 durable run 後會顯示於下方。</p>
+{% endif %}
+{% if request.query_params.get("cancel_requested") %}
+<p class="notice">取消請求已保存，會在下一個安全邊界生效。</p>
+{% endif %}
+
+<section class="sync-actions" aria-label="同步操作">
+  <form class="panel" method="post" action="/sync/start/incremental">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <h2>Incremental sync</h2>
+    <p class="muted">從已提交的 Gmail historyId 開始，只處理新增、刪除與標籤變更。</p>
+    <button type="submit" {% if worker.active %}disabled{% endif %}>啟動增量同步</button>
+  </form>
+  <form class="panel" method="post" action="/sync/start/full">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <h2>Full / reconciliation sync</h2>
+    <label>Gmail query
+      <input name="query" placeholder="例如 newer_than:2y">
+    </label>
+    <label class="checkbox-row">
+      <input class="selection-checkbox" type="checkbox" name="all_senders" value="1">
+      不套用銀行寄件者名單（完整信箱）
+    </label>
+    <button type="submit" {% if worker.active %}disabled{% endif %}>啟動全量同步</button>
+  </form>
+</section>
+
+<div
+  id="sync-progress"
+  hx-get="/sync/progress"
+  hx-trigger="every 2s"
+  hx-swap="innerHTML"
+>
+  {% include "partials/sync_progress.html" %}
+</div>
+{% endblock %}

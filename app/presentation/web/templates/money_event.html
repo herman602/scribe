@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}收支明細 · Scribe{% endblock %}
+{% block content %}
+<a class="back-link" href="/money/daily">← 回到每日收支</a>
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Financial event</p>
+    <h1>{{ detail.event.merchant or "未填商家" }}</h1>
+    <p class="lede">{{ detail.event.amount_minor | money(detail.event.currency) }} · {{ detail.event.occurred_at | local_datetime }}</p>
+  </div>
+</section>
+
+{% if request.query_params.get("reversed") %}<p class="notice">已沖銷。</p>{% endif %}
+{% if request.query_params.get("refunded") %}<p class="notice">已記錄退款。</p>{% endif %}
+{% if request.query_params.get("note_saved") %}<p class="notice">備註已儲存。</p>{% endif %}
+{% if note_error %}<p class="notice notice-error" role="alert">{{ note_error }}</p>{% endif %}
+
+<section class="panel" aria-label="收支明細">
+  <dl class="summary-grid">
+    <div><dt>來源</dt><dd>{{ detail.event.origin.value | label }}</dd></div>
+    <div><dt>類型</dt><dd>{{ detail.event.event_type.value | label }}</dd></div>
+    <div><dt>付款方式</dt><dd>{{ detail.event.payment_method.value | label }}</dd></div>
+    <div><dt>狀態</dt><dd>{{ detail.event.status.value | label }}</dd></div>
+    <div><dt>卡片</dt><dd>{{ detail.card_display or "—" }}</dd></div>
+    <div><dt>消費歸屬</dt><dd>{{ "專款小錢包" if detail.is_dedicated_wallet_spending else "每月消費額度" }}</dd></div>
+    {% if detail.is_dedicated_wallet_spending %}
+    <div><dt>來源小錢包</dt><dd>{{ detail.dedicated_source_wallet_display }}</dd></div>
+    <div><dt>帳單暫存</dt><dd>{{ detail.clearing_wallet_display }}</dd></div>
+    {% else %}
+    <div><dt>錢包</dt><dd>{{ detail.wallet_display or "—" }}</dd></div>
+    {% endif %}
+  </dl>
+  {% if detail.is_dedicated_wallet_spending %}
+  <p class="muted">這筆不列入每日生活消費與月預算；來源小錢包已減少，等額資金已移到帳單暫存，銀行帳戶總額不變。</p>
+  {% endif %}
+  {% if detail.categories %}
+  <ul class="money-card-list">
+    {% for share in detail.categories %}
+    <li class="money-card"><div class="money-card-main"><strong>{{ share.name }}</strong></div><div class="money-card-amount">{{ share.amount_minor | money(detail.event.currency) }}</div></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section class="panel" aria-label="交易備註">
+  <div class="panel-heading"><h2>備註</h2></div>
+  <p class="muted">可以隨時補充或修改。備註不會改動金額、分類、錢包、信用卡負債或會計分錄。</p>
+  <form method="post" action="/money/events/{{ detail.event.id }}/note" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ detail.event.version }}">
+    <label>交易備註（選填，最多 500 字）
+      <textarea name="note" maxlength="500" rows="4" autocomplete="off">{{ note_value }}</textarea>
+    </label>
+    <button type="submit">儲存備註</button>
+  </form>
+</section>
+
+{% if detail.source_links %}
+<section class="panel" aria-label="來源比對">
+  <div class="panel-heading"><h2>來源比對</h2></div>
+  <ul class="money-card-list">
+    {% for link in detail.source_links %}
+    <li class="money-card">
+      <div class="money-card-main">
+        <strong>{{ link.status.value | label }} · 比對分數 {{ link.score_bps }}</strong>
+        <small>{% for reason in link.reasons %}<span class="badge">{{ reason.value | label }}</span>{% endfor %}</small>
+      </div>
+      <div class="money-card-amount"><a href="/transactions/{{ link.transaction_id }}">來源</a></div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if detail.is_reversible %}
+<section class="panel" aria-label="沖銷">
+  <div class="panel-heading"><h2>沖銷這筆</h2></div>
+  <p class="muted">沖銷會產生一筆完全相反的分錄，並釋放這筆事件還預留的資金。原本的事件、分配與分錄都不會被改寫，B6 的排程證據也不會被動到。</p>
+  <form method="post" action="/money/events/{{ detail.event.id }}/reverse" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ detail.event.version }}">
+    <button type="submit">沖銷</button>
+  </form>
+</section>
+{% elif detail.reversal_entry %}
+<p class="muted">這筆已經在 {{ detail.reversal_entry.effective_at | local_datetime }} 沖銷。</p>
+{% endif %}
+
+{% if detail.history | length > 1 %}
+<section class="panel" aria-label="處理歷史">
+  <div class="panel-heading"><h2>處理歷史</h2></div>
+  <p class="muted">這筆被處理過幾次，以及每次的金額方向。重新分配會留下一次入帳與一次沖銷，兩者相加為零；目前生效的是標為「現行」的那一筆。</p>
+  <dl class="meta-list">
+    {% for row in detail.history %}
+    <div>
+      <dt>{{ row.recorded_at | local_datetime }}</dt>
+      <dd>
+        {% if row.is_cancellation %}沖銷{% else %}入帳{% endif %}
+        · {{ row.amount_minor | money(row.currency) }}
+        {% if row.is_in_force %}<span class="status confirmed">現行</span>{% endif %}
+      </dd>
+    </div>
+    {% endfor %}
+  </dl>
+</section>
+{% endif %}
+
+{% if detail.is_redoable %}
+<section class="panel" aria-label="重新分配">
+  <div class="panel-heading"><h2>重新分配</h2></div>
+  <p class="muted">如果扣款來源或分類選錯了，這裡可以重新決定一次：會產生一筆相反的分錄沖掉原本的，把這筆事件預留的資金還回去，然後讓它回到待分配。事件本身的金額、商家、時間、卡片都不會變——那些是銀行的紀錄。</p>
+  <form method="post" action="/money/events/{{ detail.event.id }}/allocation-redo" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ detail.event.version }}">
+    <button type="submit">重新分配</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

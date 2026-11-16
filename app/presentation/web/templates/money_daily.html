@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}每日收支 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Daily spending</p>
+    <h1>每日收支</h1>
+    <p class="lede">金額全部來自已入帳的分類分錄，所以退款會扣回、沖銷會在生效日扣回，轉帳與存款不算支出。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("recorded") %}<p class="notice">已記錄並入帳。</p>{% endif %}
+
+<nav class="date-strip" aria-label="選擇日期">
+  {% for day in view.days %}
+  <a class="date-chip{% if day == view.day %} is-selected{% endif %}"
+     href="/money/daily?day={{ day.isoformat() }}&amp;method={{ view.payment_filter }}"
+     {% if day == view.day %}aria-current="date"{% endif %}>
+    <span>{{ day.strftime("%m/%d") }}</span>
+    <small>{{ ["一", "二", "三", "四", "五", "六", "日"][day.weekday()] }}</small>
+  </a>
+  {% endfor %}
+</nav>
+
+<nav class="pill-row" aria-label="付款方式">
+  {% for code, label in [("all", "全部"), ("cash", "現金"), ("card", "信用卡")] %}
+  <a class="pill{% if view.payment_filter == code %} is-selected{% endif %}"
+     href="/money/daily?day={{ view.day.isoformat() }}&amp;method={{ code }}"
+     {% if view.payment_filter == code %}aria-current="true"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
+
+<section class="panel" aria-label="當日合計">
+  <div class="panel-heading"><h2>{{ view.day.isoformat() }} 合計</h2></div>
+  <div class="total-grid">
+    <div class="total-block">
+      <span>現金</span>
+      {% set cash_totals = view.totals_for(cash) %}
+      {% if cash_totals %}
+        {% for total in cash_totals %}<strong>{{ total.amount_minor | money(total.currency) }}</strong>{% endfor %}
+      {% else %}<strong>—</strong>{% endif %}
+    </div>
+    <div class="total-block">
+      <span>信用卡</span>
+      {% set card_totals = view.totals_for(card) %}
+      {% if card_totals %}
+        {% for total in card_totals %}<strong>{{ total.amount_minor | money(total.currency) }}</strong>{% endfor %}
+      {% else %}<strong>—</strong>{% endif %}
+    </div>
+  </div>
+  <p class="muted">不同幣別分開列出，永遠不會相加。</p>
+</section>
+
+{% if view.legacy_rows %}
+<section class="panel" aria-label="期初前匯入歷史">
+  <div class="panel-heading">
+    <div>
+      <p class="eyebrow">Imported history</p>
+      <h2>期初前消費</h2>
+    </div>
+  </div>
+  <p class="notice">這些資料來自切換前的 Google Sheet，已包含在目前期初餘額中；只供按日查閱，不會再次扣款或占用預算。</p>
+  <div class="total-grid">
+    <div class="total-block">
+      <span>現金</span>
+      {% set legacy_cash = view.legacy_totals_for(cash) %}
+      {% if legacy_cash %}{% for total in legacy_cash %}<strong>{{ total.amount_minor | money(total.currency) }}</strong>{% endfor %}{% else %}<strong>—</strong>{% endif %}
+    </div>
+    <div class="total-block">
+      <span>信用卡</span>
+      {% set legacy_card = view.legacy_totals_for(card) %}
+      {% if legacy_card %}{% for total in legacy_card %}<strong>{{ total.amount_minor | money(total.currency) }}</strong>{% endfor %}{% else %}<strong>—</strong>{% endif %}
+    </div>
+  </div>
+  <ul class="money-card-list" aria-label="期初前每日歷史">
+    {% for row in view.legacy_rows %}
+    <li class="money-card">
+      <div class="money-card-main">
+        <strong>{{ row.note or "未填備註" }}</strong>
+        <small>{{ "現金" if row.payment_method == cash else "信用卡" }} · Sheet 歷史</small>
+        <small><span class="badge badge-warning">不影響帳本</span></small>
+      </div>
+      <div class="money-card-amount">{{ row.amount_minor | money(row.currency) }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<div class="panel-heading-actions">
+  <a class="button-link" href="/money/expenses/new">記一筆支出</a>
+</div>
+
+{% if not view.rows %}
+<p class="muted">這一天沒有現金或信用卡支出。</p>
+{% else %}
+<ul class="money-card-list" aria-label="當日收支">
+  {% for row in view.rows %}
+  <li class="money-card{% if row.reduces_spending %} is-credit{% endif %}">
+    <div class="money-card-main">
+      <strong><a href="/money/events/{{ row.financial_event_id }}">{{ row.merchant or "未填商家" }}</a></strong>
+      <small>{{ row.effective_at | local_datetime }} · {{ row.card_display or row.wallet_display or "—" }}</small>
+      {% if row.note %}<small class="money-card-note">備註：{{ row.note }}</small>{% endif %}
+      <small>
+        {% for share in row.categories %}<span class="badge">{{ share.name }}</span>{% endfor %}
+        <span class="badge">{{ row.event_status.value | label }}</span>
+      </small>
+    </div>
+    <div class="money-card-amount">{{ row.amount_minor | money(row.currency) }}</div>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if view.page_count > 1 %}
+<nav class="pager" aria-label="分頁">
+  {% if view.page > 1 %}<a href="/money/daily?day={{ view.day.isoformat() }}&amp;method={{ view.payment_filter }}&amp;page={{ view.page - 1 }}">上一頁</a>{% endif %}
+  <span>第 {{ view.page }} / {{ view.page_count }} 頁</span>
+  {% if view.has_more %}<a href="/money/daily?day={{ view.day.isoformat() }}&amp;method={{ view.payment_filter }}&amp;page={{ view.page + 1 }}">下一頁</a>{% endif %}
+</nav>
+{% endif %}
+{% endblock %}

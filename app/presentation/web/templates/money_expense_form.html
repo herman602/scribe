@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}記一筆支出 · Scribe{% endblock %}
+{% block content %}
+<a class="back-link" href="/money/daily">← 回到每日收支</a>
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Manual expense</p>
+    <h1>記一筆支出</h1>
+    <p class="lede">一般消費會占用本月額度；專款刷卡會把來源小錢包轉入帳單暫存，不列入每日生活消費。</p>
+  </div>
+</section>
+
+<nav class="pill-row" aria-label="付款方式">
+  <a class="pill{% if mode == 'cash' %} is-selected{% endif %}" href="/money/expenses/new?mode=cash">現金</a>
+  <a class="pill{% if mode == 'card' %} is-selected{% endif %}" href="/money/expenses/new?mode=card">信用卡</a>
+</nav>
+
+{% if error %}<p class="notice notice-error" role="alert">{{ error }}</p>{% endif %}
+
+<section class="panel">
+  <form method="post" action="/money/expenses" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="client_token" value="{{ client_token }}">
+    <input type="hidden" name="payment_method" value="{% if mode == 'card' %}credit_card{% else %}cash{% endif %}">
+
+    <label>商家或用途
+      <input name="merchant" required maxlength="200" autocomplete="off" value="{{ values.get('merchant', '') }}">
+    </label>
+
+    <label>金額
+      <input name="amount" required inputmode="decimal" placeholder="例如 1,280" value="{{ values.get('amount', '') }}">
+      <small class="muted">用平常看到的金額填寫，不是最小單位。</small>
+    </label>
+
+    <label>幣別
+      <select name="currency" required>
+        {% set seen = [] %}
+        {% for row in accounts %}{% if row.account.currency not in seen %}{% set _ = seen.append(row.account.currency) %}
+        <option value="{{ row.account.currency }}"{% if row.account.currency == (values.get('currency') or default_currency) %} selected{% endif %}>{{ row.account.currency }}</option>
+        {% endif %}{% endfor %}
+        {% if default_currency not in seen %}<option value="{{ default_currency }}" selected>{{ default_currency }}</option>{% endif %}
+      </select>
+    </label>
+
+    <label>時間
+      <input type="datetime-local" name="occurred_at" required value="{{ values.get('occurred_at') or now_local.strftime('%Y-%m-%dT%H:%M') }}">
+    </label>
+
+    {% if mode == 'card' %}
+    <label>卡片
+      <select name="card_id" required>
+        {% for view in cards %}{% if view.card.is_ready and not view.card.active_to %}
+        <option value="{{ view.card.id }}"{% if values.get('card_id') == view.card.id|string %} selected{% endif %}>{{ view.issuer_name }} ••{{ view.card.last_four }} · {{ view.card.display_name }}</option>
+        {% endif %}{% endfor %}
+      </select>
+      <small class="muted">只列出已設定負債與結帳帳戶的卡片。</small>
+    </label>
+
+    <label>消費處理方式
+      <select name="spending_treatment" required>
+        <option value="monthly_budget"{% if values.get('spending_treatment', 'monthly_budget') == 'monthly_budget' %} selected{% endif %}>每月生活消費額度</option>
+        <option value="dedicated_wallet"{% if values.get('spending_treatment') == 'dedicated_wallet' %} selected{% endif %}>專款小錢包 → 帳單暫存</option>
+      </select>
+      <small class="muted">專款模式仍會記錄支出與卡片負債，但不出現在每日生活消費，也不占用本月額度。</small>
+    </label>
+
+    <label>帳單暫存錢包（專款模式必選）
+      <select name="clearing_wallet_id">
+        <option value="">一般消費不使用</option>
+        {% for row in accounts %}{% for wallet in row.wallets %}{% if wallet.purpose.value == 'clearing_hub' %}
+        <option value="{{ wallet.wallet_id }}"{% if values.get('clearing_wallet_id') == wallet.wallet_id|string %} selected{% endif %}>{{ row.account.display_name }} · {{ wallet.name }}（{{ row.account.currency }}）</option>
+        {% endif %}{% endfor %}{% endfor %}
+      </select>
+      <small class="muted">來源小錢包與帳單暫存必須位於同一個實體銀行帳戶；跨行要走真實轉帳流程。</small>
+    </label>
+    {% else %}
+    <input type="hidden" name="spending_treatment" value="monthly_budget">
+    {% endif %}
+
+    <label>資金來源錢包
+      <select name="funding_wallet_id" required>
+        {% for row in accounts %}{% if row.wallets %}<optgroup label="{{ row.account.display_name }}（{{ row.account.currency }}）">
+        {% for wallet in row.wallets %}<option value="{{ wallet.wallet_id }}"{% if values.get('funding_wallet_id') == wallet.wallet_id|string %} selected{% endif %}>{{ wallet.name }}</option>{% endfor %}
+        </optgroup>{% endif %}{% endfor %}
+      </select>
+      <small class="muted">{% if mode == 'cash' %}現金支出必須選現金帳戶的錢包。{% else %}刷卡時這是之後要拿來還款的錢包。{% endif %}</small>
+    </label>
+
+    <label>分類
+      <select name="budget_category_id" required>
+        <option value="" disabled{% if not values.get('budget_category_id') %} selected{% endif %}>請選擇分類</option>
+        {% for category in categories %}{% if category.is_active %}<option value="{{ category.id }}"{% if values.get('budget_category_id') == category.id|string %} selected{% endif %}>{{ category.name }}</option>{% endif %}{% endfor %}
+      </select>
+      <small class="muted">手動記帳一定要選分類，否則這筆金額進了當日合計卻沒有任何預算能解釋它。</small>
+    </label>
+
+    <label>備註（選填）
+      <input name="note" maxlength="500" autocomplete="off" value="{{ values.get('note', '') }}">
+    </label>
+
+    <button type="submit">記錄並入帳</button>
+  </form>
+</section>
+{% endblock %}

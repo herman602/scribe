@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block title %}清算與排程轉帳 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Clearing hub</p>
+    <h1>清算與排程轉帳</h1>
+    <p class="lede">這裡處理「帳單暫存」撥款與信用卡自動扣繳。排程只是你已經跟銀行設定好的動作，Scribe 會在排定的時間<strong>自動視為轉出</strong>。這個判斷來自本機排程政策，並非銀行確認；真正的對帳要等 B7 的餘額核對。排程前只會改變預留與可用金額，到期才會產生一筆不可修改的分錄。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("scheduled") %}<p class="notice">排程已建立。到期前只會改變預留金額。</p>{% endif %}
+{% if request.query_params.get("autopay") %}<p class="notice">自動扣繳排程已建立。</p>{% endif %}
+{% if request.query_params.get("cancelled") %}<p class="notice">排程已取消，預留金額已釋放。</p>{% endif %}
+{% if request.query_params.get("retried") %}<p class="notice">排程已重新排入佇列。</p>{% endif %}
+{% if request.query_params.get("reversed") %}<p class="notice">已建立沖銷分錄，金額已回到原本的錢包。</p>{% endif %}
+{% if request.query_params.get("ran") %}<p class="notice">已執行一次到期檢查。</p>{% endif %}
+
+{% if view.has_refund_warning %}
+<section class="panel" aria-label="超額排程警示">
+  <p class="notice warning">有 {{ view.over_covered }} 筆預留被排程的金額已經超過它還需要的部分（通常是排程後才發生退款）。Scribe 不會偷偷改掉你已經跟銀行設定的轉帳。</p>
+  <p class="muted">目前這些超額可以這樣處理：</p>
+  <ul class="warning-actions">
+    {% for action in view.over_covered_commitments.actions %}<li>{{ warning_summary_labels.get(action, action) }}</li>{% endfor %}
+  </ul>
+  <div class="table-wrap clearing-table-wrap">
+    <table class="data-table responsive-data-table clearing-data-table">
+      <thead><tr><th scope="col">預留</th><th scope="col">來源錢包</th><th scope="col">結算帳戶</th><th scope="col">仍需要</th><th scope="col">已排程合計</th><th scope="col">超額</th></tr></thead>
+      <tbody>
+        {% for item in view.over_covered_commitments.rows %}
+        <tr>
+          <td data-label="預留">#{{ item.funding_commitment_id }}</td>
+          <td data-label="來源錢包">{{ item.source_wallet_name }}</td>
+          <td data-label="結算帳戶">{{ item.settlement_account_name }}</td>
+          <td data-label="仍需要" class="amount">{{ item.required_minor | money(item.currency) }}</td>
+          <td data-label="已排程合計" class="amount">{{ item.live_coverage_minor | money(item.currency) }}</td>
+          <td data-label="超額" class="amount">{{ item.excess_minor | money(item.currency) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% set warn = view.over_covered_commitments %}
+  <p class="muted">
+    共 {{ view.over_covered }} 筆，本頁顯示第 {{ warn.shown_from }}–{{ warn.shown_to }} 筆（第 {{ warn.page_number }} / {{ warn.page_count }} 頁）。
+    {% if warn.has_more %}<a class="text-link" href="/clearing?page={{ page }}&amp;warn_page={{ warn.page_number + 1 }}">看其餘的超額預留</a>{% endif %}
+    {% if warn.page_number > 1 %}<a class="text-link" href="/clearing?page={{ page }}&amp;warn_page={{ warn.page_number - 1 }}">回上一頁</a> · <a class="text-link" href="/clearing?page={{ page }}&amp;warn_page=1">回第一頁</a>{% endif %}
+  </p>
+  <p class="muted">合計包含所有 已排程／執行中／執行失敗／已自動視為轉出 的涵蓋，所以就算超額是被兩張排程分攤的，這裡一樣看得到；已取消與已沖銷的排程不算。</p>
+</section>
+{% endif %}
+
+<section class="panel" aria-label="維護排程器狀態">
+  <div class="panel-heading">
+    <h2>維護排程器</h2>
+    <span>到期待執行 {{ view.due_now }} 筆</span>
+  </div>
+  {% if coordinator %}
+  <dl class="meta-list">
+    <div><dt>狀態</dt><dd>{% if not coordinator.enabled %}已停用{% elif coordinator.running %}執行中{% else %}未啟動{% endif %}</dd></div>
+    <div><dt>輪詢間隔</dt><dd>{{ coordinator.poll_seconds }} 秒</dd></div>
+    <div><dt>每次上限</dt><dd>{{ coordinator.batch_size }} 筆</dd></div>
+    <div><dt>已執行輪數</dt><dd>{{ coordinator.passes }}</dd></div>
+    <div><dt>最後一輪結束</dt><dd>{{ coordinator.last_finished_at | local_datetime }}</dd></div>
+    <div><dt>最後一輪結果</dt><dd>認列 {{ coordinator.last_executed }} · 重試 {{ coordinator.last_retried }} · 失敗 {{ coordinator.last_failed }}</dd></div>
+    <div><dt>連續錯誤</dt><dd>{{ coordinator.consecutive_errors }}{% if coordinator.last_error_code %} · {{ coordinator.last_error_code }}{% endif %}</dd></div>
+  </dl>
+  {% else %}
+  <p class="muted">這個程序沒有啟動維護排程器。</p>
+  {% endif %}
+  <form method="post" action="/clearing/run-due" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">立即檢查到期排程</button>
+  </form>
+  <p class="muted">預設在每天 {{ default_time }}（{{ schedule_timezone }}）視為轉出。電腦睡著時會在下一次啟動補做，記帳日期仍然是原本的到期時間。</p>
+</section>
+
+<section class="panel" aria-label="錢包餘額">
+  <div class="panel-heading"><h2>錢包實際、預留與可用</h2></div>
+  <div class="table-wrap clearing-table-wrap">
+    <table class="data-table responsive-data-table clearing-data-table">
+      <thead><tr><th scope="col">帳戶</th><th scope="col">錢包</th><th scope="col">實際</th><th scope="col">預留</th><th scope="col">可用</th></tr></thead>
+      <tbody>
+        {% for position in view.positions %}
+        <tr>
+          <td data-label="帳戶">{{ position.account_name }}</td>
+          <td data-label="錢包">{{ position.wallet_name }}{% if position.is_clearing_hub %} · 帳單暫存{% endif %}</td>
+          <td data-label="實際" class="amount">{{ position.balance_minor | money(position.currency) }}</td>
+          <td data-label="預留" class="amount">{{ position.reserved_minor | money(position.currency) }}</td>
+          <td data-label="可用" class="amount">{{ position.available_minor | money(position.currency) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="muted">還沒有可用的錢包。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" aria-label="可排程的預留">
+  <div class="panel-heading"><h2>可以一起處理的預留</h2></div>
+  <p class="muted">同一個來源帳戶、同一個結算帳戶、同一個幣別的預留可以用一筆真實轉帳一起涵蓋。</p>
+  {% for group in view.groups %}
+  <article class="clearing-group">
+    <h3>{{ group.source_account_name }} → {{ group.settlement_account_name }}（{{ group.currency }}）</h3>
+    <p class="muted">{{ fulfillment_labels.get(group.fulfillment_mode.value, group.fulfillment_mode.value) }} · 尚未被排程涵蓋 {{ group.uncovered_minor | money(group.currency) }}</p>
+    <div class="table-wrap clearing-table-wrap">
+      <table class="data-table responsive-data-table clearing-data-table">
+        <thead><tr><th scope="col">預留</th><th scope="col">來源錢包</th><th scope="col">卡片</th><th scope="col">仍需要</th><th scope="col">已排程</th><th scope="col">尚未涵蓋</th></tr></thead>
+        <tbody>
+          {% for row in group.rows %}
+          <tr>
+            <td data-label="預留">#{{ row.commitment.id }}</td>
+            <td data-label="來源錢包">{{ row.source_wallet_name }}</td>
+            <td data-label="卡片">{{ row.card_display_name or "—" }}</td>
+            <td data-label="仍需要" class="amount">{{ row.required_minor | money(row.commitment.currency) }}</td>
+            <td data-label="已排程" class="amount">{{ (row.active_covered_minor + row.executed_covered_minor) | money(row.commitment.currency) }}</td>
+            <td data-label="尚未涵蓋" class="amount">{{ row.uncovered_minor | money(row.commitment.currency) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </article>
+  {% else %}
+  <p class="muted">目前沒有需要移動資金的預留。</p>
+  {% endfor %}
+</section>
+
+<section class="panel" aria-label="建立帳單暫存撥款">
+  <div class="panel-heading"><h2>建立帳單暫存撥款</h2></div>
+  <form method="post" action="/clearing/schedules" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="client_token" value="{{ client_token }}">
+    <label>來源帳戶
+      <select name="source_account_id" required>
+        {% for account in view.accounts %}<option value="{{ account.financial_account_id }}">{{ account.display_name }}（{{ account.currency }}）</option>{% endfor %}
+      </select>
+    </label>
+    <label>來源錢包
+      <select name="source_wallet_id" required>
+        {% for wallet in view.wallets %}<option value="{{ wallet.wallet_id }}">{{ wallet.account_name }} · {{ wallet.wallet_name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>目的帳戶
+      <select name="destination_account_id" required>
+        {% for account in view.accounts %}<option value="{{ account.financial_account_id }}">{{ account.display_name }}（{{ account.currency }}）</option>{% endfor %}
+      </select>
+    </label>
+    <label>目的錢包
+      <select name="destination_wallet_id" required>
+        {% for wallet in view.wallets %}<option value="{{ wallet.wallet_id }}">{{ wallet.account_name }} · {{ wallet.wallet_name }}{% if wallet.is_clearing_hub %}（帳單暫存）{% endif %}</option>{% endfor %}
+      </select>
+    </label>
+    <label>金額
+      <input name="amount" inputmode="decimal" required>
+    </label>
+    <label>排程日期
+      <input type="date" name="scheduled_local_date" value="{{ default_date.isoformat() }}" required>
+    </label>
+    <label>排程時間（{{ schedule_timezone }}）
+      <input type="time" name="scheduled_local_time" value="{{ default_time }}">
+    </label>
+    {% for group in view.groups %}{% for row in group.rows %}
+    <label class="checkbox-row">
+      <input class="selection-checkbox" type="checkbox" name="cover_commitment_id" value="{{ row.commitment.id }}">
+      涵蓋預留 #{{ row.commitment.id }}（{{ row.source_wallet_name }}，尚未涵蓋 {{ row.uncovered_minor | money(row.commitment.currency) }}）
+      <input type="hidden" name="commitment_id" value="{{ row.commitment.id }}">
+      <input name="commitment_amount" inputmode="decimal" value="{{ row.uncovered_minor | major(row.commitment.currency) }}">
+    </label>
+    {% endfor %}{% endfor %}
+    <label class="checkbox-row">
+      <input class="selection-checkbox" type="checkbox" name="confirm_overdue" value="1">
+      我確認這個時間可能已經過了，仍要建立
+    </label>
+    <button type="submit">建立排程</button>
+  </form>
+  <p class="muted">一筆帳單暫存撥款必須剛好涵蓋所選預留的合計金額。</p>
+</section>
+
+<section class="panel" aria-label="建立信用卡自動扣繳">
+  <div class="panel-heading"><h2>建立信用卡自動扣繳</h2></div>
+  {% if view.cards %}
+  <form method="post" action="/clearing/autopay" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="client_token" value="{{ client_token }}">
+    <label>卡片
+      <select name="card_id" required>
+        {% for card in view.cards %}<option value="{{ card.card_id }}">{{ card.display_name }} · 結算帳戶 {{ card.settlement_account_name }} · 目前負債 {{ card.outstanding_minor | money(card.currency) }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>未被預留涵蓋的部分，從這個錢包扣
+      <select name="source_wallet_id" required>
+        {% for wallet in view.wallets %}<option value="{{ wallet.wallet_id }}">{{ wallet.account_name }} · {{ wallet.wallet_name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>金額
+      <input name="amount" inputmode="decimal" required>
+    </label>
+    <label>排程日期
+      <input type="date" name="scheduled_local_date" value="{{ default_date.isoformat() }}" required>
+    </label>
+    <label>排程時間（{{ schedule_timezone }}）
+      <input type="time" name="scheduled_local_time" value="{{ default_time }}">
+    </label>
+    {% for group in view.groups %}{% for row in group.rows %}{% if row.commitment.fulfillment_mode.value == "reserve_only" %}
+    <label class="checkbox-row">
+      <input class="selection-checkbox" type="checkbox" name="cover_commitment_id" value="{{ row.commitment.id }}">
+      涵蓋預留 #{{ row.commitment.id }}（{{ row.source_wallet_name }}，尚未涵蓋 {{ row.uncovered_minor | money(row.commitment.currency) }}）
+      <input type="hidden" name="commitment_id" value="{{ row.commitment.id }}">
+      <input name="commitment_amount" inputmode="decimal" value="{{ row.uncovered_minor | major(row.commitment.currency) }}">
+    </label>
+    {% endif %}{% endfor %}{% endfor %}
+    <label class="checkbox-row">
+      <input class="selection-checkbox" type="checkbox" name="confirm_overdue" value="1">
+      我確認這個時間可能已經過了，仍要建立
+    </label>
+    <button type="submit">建立自動扣繳排程</button>
+  </form>
+  <p class="muted">每一筆被涵蓋的預留會從它自己的錢包扣款；剩下沒有被涵蓋的差額才從上面選的錢包扣。</p>
+  {% else %}
+  <p class="muted">還沒有設定完成的卡片。請先到<a class="text-link" href="/cards">卡片</a>設定負債與結算帳戶。</p>
+  {% endif %}
+</section>
+
+{% macro schedule_table(page, caption, actions, csrf_token, status_labels, purpose_labels, warning_action_labels, warn_page) %}
+<section class="panel" aria-label="{{ caption }}">
+  <div class="panel-heading">
+    <h2>{{ caption }}</h2>
+    <span>共 {{ page.total }} 筆</span>
+  </div>
+  <div class="table-wrap clearing-table-wrap">
+    <table class="data-table responsive-data-table clearing-data-table">
+      <thead><tr><th scope="col">排程</th><th scope="col">類型</th><th scope="col">路徑</th><th scope="col">金額</th><th scope="col">到期時間</th><th scope="col">實際處理時間</th><th scope="col">狀態</th>{% if actions %}<th scope="col">動作</th>{% endif %}</tr></thead>
+      <tbody>
+        {% for row in page.rows %}
+        <tr>
+          <td data-label="排程">#{{ row.schedule.id }}</td>
+          <td data-label="類型">{{ purpose_labels.get(row.schedule.purpose.value, row.schedule.purpose.value) }}</td>
+          <td data-label="路徑">{{ row.source_account_name }} · {{ row.source_wallet_name }} → {% if row.is_autopay %}{{ row.card_display_name or row.destination_account_name }}{% else %}{{ row.destination_account_name }} · {{ row.destination_wallet_name }}{% endif %}</td>
+          <td data-label="金額" class="amount">{{ row.schedule.amount_minor | money(row.schedule.currency) }}{% if row.covered_minor %}<br><small class="muted">涵蓋預留 {{ row.covered_minor | money(row.schedule.currency) }}</small>{% endif %}</td>
+          <td data-label="到期時間">{{ row.schedule.due_at_utc | local_datetime }}</td>
+          <td data-label="實際處理時間">{{ row.schedule.processed_at | local_datetime }}</td>
+          <td data-label="狀態">{{ status_labels.get(row.schedule.status.value, row.schedule.status.value) }}{% if row.schedule.last_error_code %}<br><small class="muted">{{ row.schedule.last_error_message }}</small>{% endif %}{% if row.has_refund_warning %}<br><small class="warning-text">這筆涵蓋的預留已被超額排程 {{ row.excess_minor | money(row.schedule.currency) }}，{{ warning_action_labels.get(row.warning_action, row.warning_action) }}</small>{% endif %}</td>
+          {% if actions %}
+          <td data-label="動作">
+            <div class="salary-actions">
+              {% if row.schedule.status.value in ("scheduled", "failed") %}
+              <form method="post" action="/clearing/schedules/{{ row.schedule.id }}/cancel">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="version" value="{{ row.schedule.version }}">
+                <button type="submit">取消</button>
+              </form>
+              {% endif %}
+              {% if row.schedule.status.value == "failed" %}
+              <form method="post" action="/clearing/schedules/{{ row.schedule.id }}/retry">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="version" value="{{ row.schedule.version }}">
+                <button type="submit">重試</button>
+              </form>
+              {% endif %}
+              {% if row.schedule.status.value == "assumed_executed" %}
+              <form method="post" action="/clearing/schedules/{{ row.schedule.id }}/reverse">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="version" value="{{ row.schedule.version }}">
+                <button type="submit">沖銷</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ 8 if actions else 7 }}" class="muted">沒有資料。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page.has_more %}<p class="muted"><a class="text-link" href="/clearing?page={{ page.page_number + 1 }}&amp;warn_page={{ warn_page }}">看更多</a></p>{% endif %}
+</section>
+{% endmacro %}
+
+{{ schedule_table(view.upcoming, "即將執行的排程", True, csrf_token, status_labels, purpose_labels, warning_action_labels, warn_page) }}
+{{ schedule_table(view.failed, "執行失敗的排程", True, csrf_token, status_labels, purpose_labels, warning_action_labels, warn_page) }}
+{{ schedule_table(view.executed, "已自動視為轉出的紀錄", True, csrf_token, status_labels, purpose_labels, warning_action_labels, warn_page) }}
+{{ schedule_table(view.closed, "已取消或已沖銷的紀錄", False, csrf_token, status_labels, purpose_labels, warning_action_labels, warn_page) }}
+
+<p class="muted">失敗的排程仍然保留預留金額：你交給銀行的指示還沒有被撤銷。要真的放掉那筆錢，請取消排程。</p>
+{% endblock %}

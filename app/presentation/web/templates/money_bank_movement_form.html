@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}銀行異動 · Scribe{% endblock %}
+{% block content %}
+<a class="back-link" href="/money/accounts">← 回到帳戶</a>
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Bank movement</p>
+    <h1>記錄銀行異動</h1>
+    <p class="lede">這些是銀行已經完成的動作。利息、匯入匯出、自動扣繳、手續費、帳單扣款各有自己的分錄形狀，不會被記成「調整」。</p>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading"><h2>單筆異動</h2></div>
+  <form method="post" action="/money/bank-movements" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="client_token" value="{{ client_token }}">
+    <label>種類
+      <select name="kind" required>
+        {% for kind in kinds %}<option value="{{ kind.value }}">{{ kind_labels.get(kind.value, kind.value) }}</option>{% endfor %}
+      </select>
+      <small class="muted">「提款並全額列入生活費」會直接扣銀行錢包，並把全額算成本月現金消費；不建立或追蹤皮夾現金。銀行支出都必須選分類。</small>
+    </label>
+    <label>說明
+      <input name="description" required maxlength="200" autocomplete="off">
+    </label>
+    <label>金額
+      <input name="amount" required inputmode="decimal" placeholder="例如 1,280">
+    </label>
+    <label>幣別
+      <select name="currency" required>
+        {% set seen = [] %}
+        {% for row in accounts %}{% if row.account.currency not in seen %}{% set _ = seen.append(row.account.currency) %}
+        <option value="{{ row.account.currency }}"{% if row.account.currency == default_currency %} selected{% endif %}>{{ row.account.currency }}</option>
+        {% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>時間
+      <input type="datetime-local" name="occurred_at" required value="{{ now_local.strftime('%Y-%m-%dT%H:%M') }}">
+    </label>
+    <label>錢包
+      <select name="wallet_id" required>
+        {% for row in accounts %}{% if row.wallets %}<optgroup label="{{ row.account.display_name }}（{{ row.account.currency }}）">
+        {% for wallet in row.wallets %}<option value="{{ wallet.wallet_id }}">{{ wallet.name }}</option>{% endfor %}
+        </optgroup>{% endif %}{% endfor %}
+      </select>
+      <small class="muted">一定要明確指定；「未分配」也是一個真正的選擇。</small>
+    </label>
+    <label>分類（只有支出需要）
+      <select name="budget_category_id">
+        <option value="">不指定</option>
+        {% for category in categories %}{% if category.is_active %}<option value="{{ category.id }}">{{ category.name }}</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>備註（選填）
+      <input name="note" maxlength="500" autocomplete="off">
+    </label>
+    <button type="submit">記錄</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-heading"><h2>帳戶間轉帳</h2></div>
+  <p class="muted">轉帳不是支出，不會產生分類分錄，也不會建立資金預留。</p>
+  <form method="post" action="/money/account-transfers" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="client_token" value="{{ transfer_token }}">
+    <label>說明
+      <input name="description" required maxlength="200" autocomplete="off">
+    </label>
+    <label>金額
+      <input name="amount" required inputmode="decimal">
+    </label>
+    <label>幣別
+      <select name="currency" required>
+        {% set seen2 = [] %}
+        {% for row in accounts %}{% if row.account.currency not in seen2 %}{% set _ = seen2.append(row.account.currency) %}
+        <option value="{{ row.account.currency }}"{% if row.account.currency == default_currency %} selected{% endif %}>{{ row.account.currency }}</option>
+        {% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>時間
+      <input type="datetime-local" name="occurred_at" required value="{{ now_local.strftime('%Y-%m-%dT%H:%M') }}">
+    </label>
+    <label>轉出錢包
+      <select name="source_wallet_id" required>
+        {% for row in accounts %}{% if row.wallets %}<optgroup label="{{ row.account.display_name }}（{{ row.account.currency }}）">{% for wallet in row.wallets %}<option value="{{ wallet.wallet_id }}">{{ wallet.name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>轉入錢包
+      <select name="destination_wallet_id" required>
+        {% for row in accounts %}{% if row.wallets %}<optgroup label="{{ row.account.display_name }}（{{ row.account.currency }}）">{% for wallet in row.wallets %}<option value="{{ wallet.wallet_id }}">{{ wallet.name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>備註（選填）
+      <input name="note" maxlength="500" autocomplete="off">
+    </label>
+    <button type="submit">記錄轉帳</button>
+  </form>
+</section>
+{% endblock %}

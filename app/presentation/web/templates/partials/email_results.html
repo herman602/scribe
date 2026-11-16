@@ -1,0 +1,14 @@
+<section class="panel">
+  <div class="panel-heading"><h2>{{ result.total }} 封 Email</h2><span>第 {{ result.page }} / {{ result.pages }} 頁</span></div>
+  <div class="table-wrap"><table class="responsive-data-table email-data-table">
+    <thead><tr><th>收到時間</th><th>寄件者 / 主旨</th><th>分類</th><th>交易</th><th>Parser</th><th>信心度</th></tr></thead>
+    <tbody>{% for item in result.items %}<tr>
+      <td data-label="收到時間"><a href="/emails/{{ item.id }}">{{ item.received_at|local_datetime }}</a></td>
+      <td data-label="寄件者 / 主旨"><strong>{{ item.sender }}</strong><small>{{ item.subject }}</small></td>
+      <td data-label="分類"><span class="tag">{{ item.classification_status.value | label }}</span>{% if item.processing_status.value == "failed" %}<span class="status error">失敗</span>{% endif %}</td>
+      <td data-label="交易">{{ item.transaction_count }}</td><td data-label="Parser">{{ item.parser_name or "—" }}</td>
+      <td data-label="信心度">{% if item.confidence is not none %}{{ (item.confidence * 100)|round|int }}%{% else %}—{% endif %}</td>
+    </tr>{% else %}<tr><td colspan="6" class="empty-row">目前沒有符合條件的 Email。</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <nav class="pagination">{% if result.page > 1 %}<a href="{{ request.url.include_query_params(page=result.page-1) }}" hx-get="{{ request.url.include_query_params(page=result.page-1) }}" hx-target="#email-results" hx-push-url="true">← 上一頁</a>{% endif %}{% if result.page < result.pages %}<a href="{{ request.url.include_query_params(page=result.page+1) }}" hx-get="{{ request.url.include_query_params(page=result.page+1) }}" hx-target="#email-results" hx-push-url="true">下一頁 →</a>{% endif %}</nav>
+</section>

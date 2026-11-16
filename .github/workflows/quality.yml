@@ -1,0 +1,68 @@
+name: Quality
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
+    steps:
+      - name: Check out the complete source tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv and the minimum supported Python
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install the locked development environment
+        run: uv sync --frozen --extra dev
+
+      - name: Lint, format, and type-check
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy .
+
+      - name: Test with branch coverage
+        run: uv run pytest -q
+
+      - name: Prove migrations against an explicit temporary target
+        run: |
+          mkdir -p "$RUNNER_TEMP/scribe-ci"
+          cd "$RUNNER_TEMP/scribe-ci"
+          export SCRIBE_DATABASE_PATH="$RUNNER_TEMP/scribe-ci/app.sqlite3"
+          uv run --project "$GITHUB_WORKSPACE" python -m app init
+          uv run --project "$GITHUB_WORKSPACE" alembic \
+            -c "$GITHUB_WORKSPACE/alembic.ini" \
+            -x database="$SCRIBE_DATABASE_PATH" check
+
+      - name: Reject private tracked material
+        run: uv run python scripts/check_public_tree.py
+
+      - name: Build and inspect wheel and source distributions
+        run: |
+          uv build
+          uv run python scripts/verify_distribution.py dist/*.whl dist/*.tar.gz
+
+      - name: Install and exercise only the built wheel
+        run: |
+          uv venv "$RUNNER_TEMP/wheel-venv" --python 3.12
+          uv pip install \
+            --python "$RUNNER_TEMP/wheel-venv/bin/python" \
+            dist/*.whl
+          "$RUNNER_TEMP/wheel-venv/bin/python" \
+            scripts/smoke_installed_distribution.py \
+            --workdir "$RUNNER_TEMP/installed-smoke" \
+            --forbid-import-root "$GITHUB_WORKSPACE"
+

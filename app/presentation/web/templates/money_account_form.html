@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}新增帳戶 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Account setup</p>
+    <h1>新增帳戶</h1>
+    <p class="lede">資產帳戶會自動建立 尚未分配 小錢包；信用卡負債帳戶只保存應付餘額。期初金額與帳戶會在同一筆資料庫交易中建立。</p>
+  </div>
+</section>
+
+<section class="panel compact-form" aria-label="新增帳戶表單">
+  <form method="post" action="/money/accounts">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label>銀行代碼
+      <input name="institution_code" placeholder="例如 taishin" required>
+    </label>
+    <label>顯示名稱
+      <input name="display_name" placeholder="例如 台新信用卡" required>
+    </label>
+    <label>帳戶類型
+      <select name="account_type" required>
+        {% for item in account_types %}
+        <option value="{{ item.value }}" {% if item == selected_type %}selected{% endif %}>{{ item.value | label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>幣別
+      <input name="currency" value="TWD" minlength="3" maxlength="3" required>
+    </label>
+    <label>遮罩識別（選填，只能保存末碼等遮罩文字）
+      <input name="masked_reference" placeholder="例如 •••• 1234">
+    </label>
+    <label>目前餘額（選填）
+      <input name="opening_balance" inputmode="decimal" placeholder="例如 12500">
+      <small>信用卡負債請輸入正數，帳本會以負債顯示；留空代表從 0 開始。</small>
+    </label>
+    <label>餘額觀測時間
+      <input type="datetime-local" name="observed_at" value="{{ now_local.strftime('%Y-%m-%dT%H:%M') }}">
+    </label>
+    <button type="submit">建立帳戶</button>
+  </form>
+</section>
+{% endblock %}

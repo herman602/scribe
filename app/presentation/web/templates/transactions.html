@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}交易 · Scribe{% endblock %}
+{% block content %}
+  <header class="page-heading"><div><p class="eyebrow">Review queue</p><h1>交易紀錄</h1></div></header>
+  <form class="filter-panel" method="get" action="/transactions"
+        hx-get="/transactions" hx-target="#transaction-results" hx-push-url="true">
+    <label>日期起<input type="date" name="date_from" value="{{ criteria.date_from or '' }}"></label>
+    <label>日期迄<input type="date" name="date_to" value="{{ criteria.date_to or '' }}"></label>
+    <label>商家<input name="merchant" value="{{ criteria.merchant or '' }}" placeholder="搜尋商家"></label>
+    <label>寄件者<input name="sender" value="{{ criteria.sender or '' }}" placeholder="搜尋寄件者"></label>
+    <label>幣別<input name="currency" maxlength="3" value="{{ criteria.currency or '' }}" placeholder="TWD"></label>
+    <label>類型
+      <select name="transaction_type">
+        <option value="">全部</option>
+        {% for value in ["purchase","refund","transfer","withdrawal","deposit","bill_payment","subscription","fee","unknown"] %}
+          <option value="{{ value }}" {% if criteria.transaction_type and criteria.transaction_type.value == value %}selected{% endif %}>{{ value | label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>狀態
+      <select name="review_status">
+        <option value="">全部</option>
+        <option value="unconfirmed" {% if criteria.review_status == "unconfirmed" %}selected{% endif %}>待確認</option>
+        <option value="confirmed" {% if criteria.review_status == "confirmed" %}selected{% endif %}>已確認</option>
+        <option value="ignored" {% if criteria.review_status == "ignored" %}selected{% endif %}>已忽略</option>
+      </select>
+    </label>
+    <label>最低信心度<input type="number" name="confidence_min" min="0" max="1" step="0.05" value="{{ criteria.confidence_min or '' }}"></label>
+    <label>最低金額（minor）<input type="number" name="amount_min" min="0" value="{{ criteria.amount_min if criteria.amount_min is not none else '' }}"></label>
+    <label>最高金額（minor）<input type="number" name="amount_max" min="0" value="{{ criteria.amount_max if criteria.amount_max is not none else '' }}"></label>
+    <label>排序
+      <select name="sort">
+        <option value="transaction_at_desc" {% if criteria.sort == "transaction_at_desc" %}selected{% endif %}>時間新到舊</option>
+        <option value="transaction_at_asc" {% if criteria.sort == "transaction_at_asc" %}selected{% endif %}>時間舊到新</option>
+        <option value="amount_desc" {% if criteria.sort == "amount_desc" %}selected{% endif %}>金額高到低</option>
+        <option value="amount_asc" {% if criteria.sort == "amount_asc" %}selected{% endif %}>金額低到高</option>
+      </select>
+    </label>
+    <div class="filter-actions"><button type="submit">套用篩選</button><a href="/transactions">清除</a></div>
+  </form>
+  <div id="transaction-results">{% include "partials/transaction_results.html" %}</div>
+{% endblock %}

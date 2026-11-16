@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.row.account.display_name }} · Scribe{% endblock %}
+{% block content %}
+<a class="back-link" href="/money/accounts">← 回到帳戶</a>
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Account</p>
+    <h1>{{ detail.row.account.display_name }}</h1>
+    <p class="lede">{{ detail.row.account.account_type.value | label }} · {{ detail.row.account.currency }}</p>
+  </div>
+  {% if detail.row.wallets | length > 1 %}
+  <div class="overview-heading-actions">
+    <a class="button-link secondary-link" href="/money/accounts/{{ detail.row.account.id }}/wallets/rename">小錢包改名</a>
+    <a class="button-link secondary-link" href="/money/accounts/{{ detail.row.account.id }}/order">小錢包排序</a>
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel" aria-label="餘額">
+  <div class="total-grid">
+    <div class="total-block"><span>實際</span><strong>{{ detail.row.balance_minor | money(detail.row.account.currency) }}</strong></div>
+    <div class="total-block"><span>預留</span><strong>{{ detail.row.reserved_minor | money(detail.row.account.currency) }}</strong></div>
+    <div class="total-block"><span>可用</span><strong>{{ detail.row.available_minor | money(detail.row.account.currency) }}</strong></div>
+  </div>
+  <ul class="money-card-list">
+    {% for wallet in detail.row.wallets %}
+    {% set is_unallocated = wallet.purpose.value == 'unallocated' %}
+    <li class="money-card{% if wallet.name == '緊急預備金' and not is_unallocated %} is-reserve{% elif is_unallocated %} is-unallocated{% endif %}">
+      <div class="money-card-main"><strong>{{ wallet.name }}</strong><small>預留 {{ wallet.reserved_minor | money(wallet.currency) }} · 可用 {{ wallet.available_minor | money(wallet.currency) }}</small></div>
+      <div class="money-card-amount">{{ wallet.balance_minor | money(wallet.currency) }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="panel" aria-label="餘額觀測">
+  <div class="panel-heading"><h2>餘額觀測</h2><a href="/money/reconcile">對帳</a></div>
+  {% if not detail.snapshots %}
+  <p class="muted">還沒有記錄過這個帳戶的銀行餘額。</p>
+  {% else %}
+  <ul class="money-card-list">
+    {% for row in detail.snapshots %}
+    <li class="money-card{% if not row.is_reconciled %} is-warning{% endif %}">
+      <div class="money-card-main">
+        <strong>{{ row.snapshot.observed_at | local_datetime }}</strong>
+        <small>帳本當時 {{ row.ledger_balance_minor | money(detail.row.account.currency) }} · 差額 {{ row.difference_minor | money(detail.row.account.currency) }}</small>
+      </div>
+      <div class="money-card-amount">{{ row.snapshot.observed_balance_minor | money(detail.row.account.currency) }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+<section class="panel" aria-label="近期異動">
+  <div class="panel-heading"><h2>近期異動</h2><a href="/money/bank-movements/new">記錄銀行異動</a></div>
+  {% if not detail.activity %}
+  <p class="muted">這個帳戶還沒有任何分錄。</p>
+  {% else %}
+  <ul class="money-card-list">
+    {% for row in detail.activity %}
+    <li class="money-card{% if row.amount_minor < 0 %} is-credit{% endif %}">
+      <div class="money-card-main">
+        <strong>{% if row.financial_event_id %}<a href="/money/events/{{ row.financial_event_id }}">{{ row.description or (row.entry_type.value | label) }}</a>{% else %}{{ row.description or (row.entry_type.value | label) }}{% endif %}</strong>
+        <small>{{ row.effective_at | local_datetime }} · {{ row.entry_type.value | label }}{% if row.wallet_display %} · {{ row.wallet_display }}{% endif %}</small>
+      </div>
+      <div class="money-card-amount">{{ row.amount_minor | money(row.currency) }}</div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endblock %}

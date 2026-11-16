@@ -1,0 +1,25 @@
+渣打網路銀行
+親愛的客戶您好！
+以下明細為您昨日持渣打國際商業銀行信用刷卡消費的成交回報資料：
+卡號
+1111-XXXX-XXXX-2468
+消費日
+2026/07/20 09:08:07
+消費金額
+TWD 1,280
+授權碼
+123456
+渣打國際商業銀行　敬上
+說明︰
+提醒您，部分「刷退交易」可能仍會顯示於通知，實際明細以帳單為準。
+Dear Customer,
+Below details show the transactions you have made by using Standard Chartered credit card yesterday：
+Card No.
+1111-XXXX-XXXX-2468
+Transaction Date
+2026/07/20 09:08:07
+Amount
+TWD 1,280
+Authorization Code
+123456
+Standard Chartered Bank

@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}訂閱 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Subscription register</p>
+    <h1>訂閱</h1>
+    <p class="lede">這一頁是訂閱費用的唯一來源。每個月的需求都由生效中的價格重新計算，年繳與自訂週期會平均攤分到週期內每一個月，餘數固定分配到週期最前面的月份，加總永遠等於整個週期的價格。每一種幣別各自計算，不會合併成同一個總額。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("created") %}<p class="notice">訂閱已新增；請接著設定它的價格區間。</p>{% endif %}
+{% if request.query_params.get("saved") %}<p class="notice">訂閱已儲存。</p>{% endif %}
+{% if request.query_params.get("priced") %}<p class="notice">價格區間已儲存。</p>{% endif %}
+{% if request.query_params.get("resumed") %}<p class="notice">已建立新的訂閱區間；原本的停用月份保持不變，請為新區間新增價格。</p>{% endif %}
+{% if request.query_params.get("wallet_saved") %}<p class="notice">預設扣款錢包已設定；這只是預設值，不會移動任何資金。</p>{% endif %}
+
+<section class="panel" aria-label="選擇月份與幣別">
+  <h2>預覽月份</h2>
+  <form method="get" action="/subscriptions" class="subscription-filter">
+    <label>月份
+      <input type="month" name="period" value="{{ label }}">
+    </label>
+    <label>幣別
+      <select name="currency">
+        <option value="">全部分開列出</option>
+        {% for code in currencies %}<option value="{{ code }}" {% if code == selected_currency %}selected{% endif %}>{{ code }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">顯示</button>
+  </form>
+  <p class="muted">選定月份：<strong>{{ label }}</strong>（以 Asia/Taipei 的日曆月計算）。歷史月份會使用當時生效的價格，不會套用最新價格。</p>
+</section>
+
+{% for requirement in requirements %}
+<section class="panel" aria-label="{{ requirement.currency }} 的 {{ requirement.label }} 訂閱需求">
+  <h2>{{ requirement.currency }} · {{ requirement.label }}</h2>
+  {% if not requirement.items %}
+  <p class="muted">這個幣別還沒有任何訂閱。</p>
+  {% else %}
+  <div class="subscription-grid">
+    {% for item in requirement.items %}
+    <article class="subscription-item">
+      <h3>{{ item.name }}</h3>
+      <p class="subscription-amount">{{ item.contribution_minor | money(item.currency) }}</p>
+      <p>
+        {% if not item.is_active %}<span class="tag">已停用</span>{% endif %}
+        {% if not item.contributes %}<span class="tag">本月不計入</span>{% endif %}
+        <span class="tag">{{ reason_labels.get(item.reason.value, item.reason.value) }}</span>
+      </p>
+      <dl class="meta-list">
+        <div><dt>週期</dt><dd>{{ cadence_labels.get(item.cadence.value, item.cadence.value) }} · {{ item.cadence_months }} 個月</dd></div>
+        <div><dt>週期位置</dt><dd>{% if item.cycle_position is none %}—{% else %}第 {{ item.cycle_position + 1 }} / {{ item.cadence_months }} 個月{% endif %}</dd></div>
+        <div><dt>週期價格</dt><dd>{% if item.cycle_price_minor is none %}—{% else %}{{ item.cycle_price_minor | money(item.currency) }}{% endif %}</dd></div>
+        <div><dt>本月分攤</dt><dd>{{ item.contribution_minor | money(item.currency) }}</dd></div>
+        <div><dt>價格生效區間</dt><dd>{% if item.price_period_id is none %}—{% else %}{{ item.effective_from | month }} 起{% if item.effective_to %}，至 {{ item.effective_to | month }} 前一個月{% else %}（無上限）{% endif %}{% endif %}</dd></div>
+        <div><dt>有效期間</dt><dd>{{ item.active_from | month }} ~ {% if item.active_to %}{{ item.active_to | month }} 前一個月{% else %}無上限{% endif %}</dd></div>
+        <div><dt>扣款錢包</dt><dd>{{ item.funding_wallet_name }}</dd></div>
+        <div><dt>預算分類</dt><dd>{{ item.budget_category_name }}</dd></div>
+        <div><dt>價格區間編號</dt><dd>{{ item.price_period_id if item.price_period_id is not none else "—" }}</dd></div>
+      </dl>
+    </article>
+    {% endfor %}
+  </div>
+  <p class="subscription-total"><strong>{{ requirement.currency }} 本月合計：</strong>{{ requirement.total_minor | money(requirement.currency) }}</p>
+  {% endif %}
+</section>
+{% endfor %}
+
+<section class="panel" aria-label="預設扣款錢包">
+  <h2>預設扣款錢包</h2>
+  <p class="muted">
+    目前設定：
+    {% if default_wallet.is_configured %}
+      {{ default_wallet.financial_account_name or "—" }} · {{ default_wallet.wallet_name or "—" }}{% if default_wallet.currency %}（{{ default_wallet.currency }}）{% endif %}
+      {% if default_wallet.problem %}<span class="tag">{{ wallet_problem_labels.get(default_wallet.problem, default_wallet.problem) }}</span>{% endif %}
+    {% else %}
+      尚未設定
+    {% endif %}
+  </p>
+  <p class="muted">設定預設值只會影響新增訂閱時的預填欄位，不會移動任何資金，也不會建立任何保留。</p>
+  <form method="post" action="/subscriptions/default-wallet">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="period" value="{{ label }}">
+    <input type="hidden" name="currency_filter" value="{{ selected_currency or '' }}">
+    <label>錢包
+      <select name="funding_wallet_id" required>
+        {% for account in accounts %}{% set account_wallets = account.wallets | selectattr("is_active") | list %}{% if account_wallets %}<optgroup label="{{ account.display_name }}（{{ account.currency }}）">{% for wallet in account_wallets %}<option value="{{ wallet.wallet_id }}" {% if wallet.wallet_id == default_wallet.wallet_id %}selected{% endif %}>{{ wallet.name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <button type="submit">設為預設</button>
+  </form>
+</section>
+
+<section class="panel" aria-label="新增訂閱">
+  <h2>新增訂閱</h2>
+  <form method="post" action="/subscriptions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="period" value="{{ label }}">
+    <input type="hidden" name="currency_filter" value="{{ selected_currency or '' }}">
+    <label>名稱
+      <input name="name" required>
+    </label>
+    <label>預算分類
+      <select name="budget_category_id" required>
+        {% for category in categories %}{% if category.is_active %}<option value="{{ category.id }}">{{ category.name }}</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>幣別
+      <input name="currency" value="{{ default_wallet.currency or selected_currency or '' }}" maxlength="3" required>
+    </label>
+    <label>扣款錢包（必須與幣別相同）
+      <select name="funding_wallet_id" required>
+        {% for account in accounts %}{% set account_wallets = account.wallets | selectattr("is_active") | list %}{% if account_wallets %}<optgroup label="{{ account.display_name }}（{{ account.currency }}）">{% for wallet in account_wallets %}<option value="{{ wallet.wallet_id }}" {% if wallet.wallet_id == default_wallet.wallet_id %}selected{% endif %}>{{ wallet.name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>計費週期
+      <select name="billing_cadence" required>
+        {% for cadence in cadences %}<option value="{{ cadence.value }}">{{ cadence_labels.get(cadence.value, cadence.value) }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>週期月數（每月 1、每年 12、自訂 2 以上）
+      <input name="cadence_months" inputmode="numeric" value="1" required>
+    </label>
+    <label>年繳月份（每年必填，作為週期起點）
+      <input name="billing_month" inputmode="numeric" min="1" max="12">
+    </label>
+    <label>扣款日（選填，只作為記錄，不會用來按日攤分）
+      <input name="billing_day" inputmode="numeric" min="1" max="31">
+    </label>
+    <label>生效起始月份（自訂週期必填，作為週期起點）
+      <input type="month" name="active_from">
+    </label>
+    <label>結束月份（選填，該月起不再計入）
+      <input type="month" name="active_to">
+    </label>
+    <button type="submit">新增訂閱</button>
+  </form>
+</section>
+
+{% if not register %}
+<p class="muted">還沒有任何訂閱。新增之後，記得為它建立至少一段價格區間。</p>
+{% endif %}
+
+{% for row in register %}
+<section class="panel" aria-label="編輯 {{ row.subscription.name }}">
+  <h2>{{ row.subscription.name }}{% if not row.subscription.is_active %} <span class="tag">已停用</span>{% endif %}</h2>
+  <p class="muted">{{ row.funding_account_name }} · {{ row.funding_wallet_name }} · {{ row.budget_category_name }} · {{ row.subscription.currency }} · 版本 {{ row.subscription.version }}</p>
+
+  <form method="post" action="/subscriptions/{{ row.subscription.id }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ row.subscription.version }}">
+    <input type="hidden" name="period" value="{{ label }}">
+    <input type="hidden" name="currency_filter" value="{{ selected_currency or '' }}">
+    <label>名稱
+      <input name="name" value="{{ row.subscription.name }}" required>
+    </label>
+    {% if row.configuration_is_frozen %}
+    <p class="muted">這個訂閱已經有價格區間，因此幣別、計費週期、週期起點、預算分類與扣款錢包已固定。價格區間只保存金額與月份區間，改動這些欄位會讓過去每一個月被重新解讀成不同的金額、幣別或分類。要換設定請先從某個月停用，再新增一個訂閱。</p>
+    <dl class="meta-list">
+      <div><dt>幣別</dt><dd>{{ row.subscription.currency }}</dd></div>
+      <div><dt>計費週期</dt><dd>{{ cadence_labels.get(row.subscription.billing_cadence.value, row.subscription.billing_cadence.value) }} · {{ row.subscription.cadence_months }} 個月</dd></div>
+      <div><dt>年繳月份</dt><dd>{{ row.subscription.billing_month if row.subscription.billing_month is not none else "—" }}</dd></div>
+      <div><dt>預算分類</dt><dd>{{ row.budget_category_name }}</dd></div>
+      <div><dt>扣款錢包</dt><dd>{{ row.funding_account_name }} · {{ row.funding_wallet_name }}</dd></div>
+    </dl>
+    <input type="hidden" name="currency" value="{{ row.subscription.currency }}">
+    <input type="hidden" name="billing_cadence" value="{{ row.subscription.billing_cadence.value }}">
+    <input type="hidden" name="cadence_months" value="{{ row.subscription.cadence_months }}">
+    <input type="hidden" name="billing_month" value="{{ row.subscription.billing_month if row.subscription.billing_month is not none else '' }}">
+    <input type="hidden" name="budget_category_id" value="{{ row.subscription.budget_category_id }}">
+    <input type="hidden" name="funding_wallet_id" value="{{ row.subscription.funding_wallet_id }}">
+    {% else %}
+    <label>預算分類
+      <select name="budget_category_id" required>
+        {% for category in categories %}<option value="{{ category.id }}" {% if category.id == row.subscription.budget_category_id %}selected{% endif %}>{{ category.name }}{% if not category.is_active %}（已停用）{% endif %}</option>{% endfor %}
+      </select>
+    </label>
+    <label>幣別
+      <input name="currency" value="{{ row.subscription.currency }}" maxlength="3" required>
+    </label>
+    <label>扣款錢包
+      <select name="funding_wallet_id" required>
+        {% for account in accounts %}{% set account_wallets = account.wallets | selectattr("is_active") | list %}{% if account_wallets %}<optgroup label="{{ account.display_name }}（{{ account.currency }}）">{% for wallet in account_wallets %}<option value="{{ wallet.wallet_id }}" {% if wallet.wallet_id == row.subscription.funding_wallet_id %}selected{% endif %}>{{ wallet.name }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>計費週期
+      <select name="billing_cadence" required>
+        {% for cadence in cadences %}<option value="{{ cadence.value }}" {% if cadence == row.subscription.billing_cadence %}selected{% endif %}>{{ cadence_labels.get(cadence.value, cadence.value) }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>週期月數
+      <input name="cadence_months" inputmode="numeric" value="{{ row.subscription.cadence_months }}" required>
+    </label>
+    <label>年繳月份
+      <input name="billing_month" inputmode="numeric" min="1" max="12" value="{{ row.subscription.billing_month if row.subscription.billing_month is not none else '' }}">
+    </label>
+    {% endif %}
+    <label>扣款日
+      <input name="billing_day" inputmode="numeric" min="1" max="31" value="{{ row.subscription.billing_day if row.subscription.billing_day is not none else '' }}">
+    </label>
+    {% if row.anchor_is_frozen %}
+    <p class="muted">自訂週期的起點就是週期錨點，已有價格後不能移動，否則每個月的週期位置都會改變。目前起點：{{ row.subscription.active_from | month }}。</p>
+    <input type="hidden" name="active_from" value="{{ row.subscription.active_from | month }}">
+    {% else %}
+    <label>生效起始月份
+      <input type="month" name="active_from" value="{% if row.subscription.active_from %}{{ row.subscription.active_from | month }}{% endif %}">
+    </label>
+    {% endif %}
+    <label>結束月份
+      <input type="month" name="active_to" value="{% if row.subscription.active_to %}{{ row.subscription.active_to | month }}{% endif %}">
+    </label>
+    <button type="submit">儲存訂閱</button>
+  </form>
+
+  {% if row.subscription.is_active %}
+  <form method="post" action="/subscriptions/{{ row.subscription.id }}/deactivate">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ row.subscription.version }}">
+    <input type="hidden" name="period" value="{{ label }}">
+    <input type="hidden" name="currency_filter" value="{{ selected_currency or '' }}">
+    <label>從哪個月起停用
+      <input type="month" name="active_to" value="{{ label }}" required>
+    </label>
+    <button type="submit">停用</button>
+  </form>
+  <p class="muted">停用不會刪除任何紀錄：停用月份之前的歷史需求仍然看得到，之後的月份會顯示 0 並附上原因。</p>
+  {% else %}
+  <form method="post" action="/subscriptions/{{ row.subscription.id }}/resume">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="period" value="{{ label }}">
+    <input type="hidden" name="currency_filter" value="{{ selected_currency or '' }}">
+    <label>從哪個月起重新開始（不得早於 {{ row.subscription.active_to | month }}）
+      <input type="month" name="active_from" value="{{ label }}" required>
+    </label>
+    <button type="submit">重新啟用</button>
+  </form>
+  <p class="muted">重新啟用會用同樣的設定建立一段<strong>新的訂閱區間</strong>，不會清掉這一列的停用月份。這樣「用過、停掉、又用」三件事都留在紀錄裡，中間停用的月份也不會突然變成有費用。新區間需要自己的價格區間。</p>
+  {% endif %}
+
+  <h3>價格區間</h3>
+  {% if not row.prices %}
+  <p class="muted">還沒有價格區間，因此每個月的需求都是 0。</p>
+  {% else %}
+  {% for price in row.prices %}
+  <form method="post" action="/subscriptions/prices/{{ price.id }}">
+    <input type="hidden" name="currency" value="{{ row.subscription.currency }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ price.version }}">
+    <input type="hidden" name="period" value="{{ label }}">
+    <input type="hidden" name="currency_filter" value="{{ selected_currency or '' }}">
+    <label>金額（可為 0）
+      <input name="amount" inputmode="decimal" value="{{ price.amount_minor | major(row.subscription.currency) }}" required>
+    </label>
+    <label>生效起始月份
+      <input type="month" name="effective_from" value="{{ price.effective_from | month }}" required>
+    </label>
+    <label>生效結束月份（不含當月，留空表示無上限）
+      <input type="month" name="effective_to" value="{% if price.effective_to %}{{ price.effective_to | month }}{% endif %}">
+    </label>
+    <button type="submit">儲存價格（版本 {{ price.version }}）</button>
+  </form>
+  {% endfor %}
+  {% endif %}
+
+  <form method="post" action="/subscriptions/{{ row.subscription.id }}/prices">
+    <input type="hidden" name="currency" value="{{ row.subscription.currency }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="period" value="{{ label }}">
+    <input type="hidden" name="currency_filter" value="{{ selected_currency or '' }}">
+    <label>新增金額
+      <input name="amount" inputmode="decimal" required>
+    </label>
+    <label>生效起始月份
+      <input type="month" name="effective_from" required>
+    </label>
+    <label>生效結束月份（不含當月，留空表示無上限）
+      <input type="month" name="effective_to">
+    </label>
+    <button type="submit">新增價格區間</button>
+  </form>
+  <p class="muted">價格區間以月份為單位，且不得重疊；相鄰是允許的，例如 2026-01 起與 2026-04 起。</p>
+</section>
+{% endfor %}
+{% endblock %}

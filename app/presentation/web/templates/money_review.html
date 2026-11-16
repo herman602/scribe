@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}待分配 · Scribe{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/wallet-category-hint.js') }}" defer></script>{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Financial events awaiting review</p>
+    <h1>待分配收支</h1>
+    <p class="lede">這些是已確認的 Gmail 交易轉成的正式事件。分配後才會入帳：刷卡只增加卡片負債並保留資金，不會直接扣掉銀行餘額。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("allocated") %}<p class="notice">已完成分配並入帳。</p>{% endif %}
+{% if selected_event_id %}<p class="notice">交易已確認。請選擇這筆要列入每月生活費，或由專款小錢包轉入帳單暫存。 <a href="/money/review">查看全部待分配事件</a></p>{% endif %}
+
+{% if not events %}
+<p class="muted">{% if selected_event_id %}這筆交易目前不需要分配；它可能已經入帳，或正在等待來源比對。{% else %}目前沒有待分配的事件。確認交易後會自動出現在這裡。{% endif %}</p>
+{% else %}
+{% for view in events %}
+<section class="panel" aria-label="待分配事件 {{ view.event.id }}">
+  <h2>{{ view.event.merchant or "未知商家" }} · {{ view.event.amount_minor | money(view.event.currency) }}</h2>
+  <dl class="summary-grid">
+    <div><dt>時間</dt><dd>{{ view.event.occurred_at | local_datetime }}</dd></div>
+    <div><dt>付款方式</dt><dd>{{ view.event.payment_method.value | label }}</dd></div>
+    <div><dt>卡片</dt><dd>{{ view.card_display or "—" }}</dd></div>
+    <div><dt>類型</dt><dd>{{ view.event.event_type.value | label }}</dd></div>
+    <div><dt>狀態</dt><dd>{{ view.event.status.value | label }}</dd></div>
+  </dl>
+  <p>
+    {% if view.needs_card_setup %}<span class="badge">需要卡片設定</span>{% endif %}
+    {% for reason in view.reasons %}<span class="badge">{{ reason.value | label }}</span>{% endfor %}
+    {% for item in view.discrepancies %}<span class="badge badge-warning">資料有異動：{{ item.value | label }}</span>{% endfor %}
+  </p>
+
+  {% if view.needs_card_setup %}
+  <p class="muted">這筆刷卡還沒有對應的卡片設定，請先到<a href="/cards">卡片設定</a>補齊負債與結帳帳戶。</p>
+  {% elif not categories %}
+  <p class="muted">還沒有任何預算分類，請先到<a href="/budget">預算</a>新增分類。</p>
+  {% else %}
+  <form method="post" action="/money/review/{{ view.event.id }}/allocate" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ view.event.version }}">
+    <input type="hidden" name="client_token" value="{{ client_token }}-{{ view.event.id }}-monthly">
+    <input type="hidden" name="spending_treatment" value="monthly_budget">
+    <h3>列入每月生活費</h3>
+    <p class="muted">這筆會計入交易月份的生活消費額度，並由你指定的資金錢包保留卡費。</p>
+    <input type="hidden" name="currency" value="{{ view.event.currency }}">
+    {% macro allocation_row(row) %}
+    <fieldset>
+      <legend>分配第 {{ row }} 列{% if row > 1 %}（選填）{% endif %}</legend>
+      <label>金額
+        <input name="amount" inputmode="decimal" {% if row == 1 %}value="{{ view.event.amount_minor | major(view.event.currency) }}" required{% endif %}>
+      </label>
+      {# The wallet answers this question for anyone who names an envelope
+         after each kind of spending, so it is folded away and only opens
+         when the chosen wallet has no category of its own name. #}
+      <details class="secondary-field">
+        <summary>分類{% if not categories %}（尚未建立）{% endif %}</summary>
+        <label>分類
+          <select name="budget_category_id">
+            <option value="">未分類</option>
+            {% for category in categories %}{% if category.is_active %}<option value="{{ category.id }}">{{ category.name }}</option>{% endif %}{% endfor %}
+          </select>
+        </label>
+      </details>
+      <label>資金來源錢包
+        <select name="funding_wallet_id" {% if row == 1 %}required{% endif %}>
+          {% if row > 1 %}<option value="">不使用這一列</option>{% endif %}
+          {# Grouped by bank. A flat list of every wallet in every account is
+             long enough that the one being looked for scrolls off, and the
+             bank name repeated on each row carried the grouping that the
+             group label now carries by itself. #}
+          {% for account in accounts %}{% if account.currency == view.event.currency %}
+          {% set account_wallets = account.wallets | selectattr("is_active") | list %}
+          {% if account_wallets %}
+          <optgroup label="{{ account.display_name }}">
+            {% for wallet in account_wallets %}<option value="{{ wallet.wallet_id }}"{% if wallet.wallet_id in wallet_category_hints %} data-category="{{ wallet_category_hints[wallet.wallet_id] }}"{% endif %} {% if row == 1 and wallet.wallet_id == view.default_funding_wallet_id %}selected{% endif %}>{{ wallet.name }}</option>{% endfor %}
+          </optgroup>
+          {% endif %}
+          {% endif %}{% endfor %}
+        </select>
+        <small class="muted">預設是這張卡設定的扣款錢包，錢會先在那裡預留，等卡費扣款時才真的離開銀行。改選其他銀行的錢包會變成跨行轉帳：帳面一樣對，但你之後得真的把錢轉過去。</small>
+      </label>
+    </fieldset>
+    {% endmacro %}
+    {{ allocation_row(1) }}
+    {# Most purchases are one row. The extra rows stay available but out of
+       the way, so the common case is not two empty blocks of noise. #}
+    <details class="split-rows">
+      <summary>分成多列（例如一次結帳買了兩種分類）</summary>
+      <p class="muted">各列金額加起來必須剛好等於 {{ view.event.amount_minor | money(view.event.currency) }}。</p>
+      {{ allocation_row(2) }}
+      {{ allocation_row(3) }}
+    </details>
+    <button type="submit">列入每月生活費並入帳</button>
+  </form>
+
+  {% if view.event.payment_method.value == 'credit_card' %}
+  <div class="allocation-choice-divider" role="separator"><span>或</span></div>
+  <section class="dedicated-allocation-options" aria-label="專款小錢包選擇">
+    <h3>從專款小錢包扣除</h3>
+    <p class="muted">整筆金額會從所選小錢包扣除，等額加到同一銀行的帳單暫存；不占每月生活費額度。只有帳單暫存所在帳戶（目前為第一銀行）的小錢包可以選。</p>
+    {% set eligible_dedicated = namespace(count=0) %}
+    {% for account in dedicated_accounts %}{% if account.currency == view.event.currency %}
+    {% set eligible_dedicated.count = eligible_dedicated.count + 1 %}
+    <form method="post" action="/money/review/{{ view.event.id }}/allocate" class="stacked-form dedicated-allocation-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="version" value="{{ view.event.version }}">
+      <input type="hidden" name="client_token" value="{{ client_token }}-{{ view.event.id }}-dedicated-{{ account.financial_account_id }}">
+      <input type="hidden" name="spending_treatment" value="dedicated_wallet">
+      <input type="hidden" name="currency" value="{{ view.event.currency }}">
+      <input type="hidden" name="amount" value="{{ view.event.amount_minor | major(view.event.currency) }}">
+      <h4>{{ account.display_name }}</h4>
+      <label>專款小錢包
+        <select name="funding_wallet_id" required>
+          {% for wallet in account.wallets %}{% if wallet.is_active and wallet.purpose.value != 'clearing_hub' %}
+          <option value="{{ wallet.wallet_id }}"{% if wallet.wallet_id in wallet_category_hints %} data-category="{{ wallet_category_hints[wallet.wallet_id] }}"{% endif %}>{{ wallet.name }} · {{ wallet.balance_minor | money(account.currency) }}</option>
+          {% endif %}{% endfor %}
+        </select>
+      </label>
+      {# Required here, so it carries an empty option: folded away with no
+         value it would otherwise post silently as whichever category came
+         first. The script opens this when nothing filled it in. #}
+      <details class="secondary-field">
+        <summary>分類</summary>
+        <label>分類
+          <select name="budget_category_id" required>
+            <option value="">請選擇分類</option>
+            {% for category in categories %}{% if category.is_active %}<option value="{{ category.id }}">{{ category.name }}</option>{% endif %}{% endfor %}
+          </select>
+        </label>
+      </details>
+      <label>轉入帳單暫存
+        <select name="clearing_wallet_id" required>
+          {% for wallet in account.wallets %}{% if wallet.is_active and wallet.purpose.value == 'clearing_hub' %}
+          <option value="{{ wallet.wallet_id }}">{{ account.display_name }} · {{ wallet.name }}</option>
+          {% endif %}{% endfor %}
+        </select>
+      </label>
+      <button type="submit">從 {{ account.display_name }} 小錢包扣除並入帳</button>
+    </form>
+    {% endif %}{% endfor %}
+    {% if eligible_dedicated.count == 0 %}
+    <p class="muted">尚未設定這個幣別的帳單暫存帳戶。完成帳戶設定後，這裡只會列出帳單暫存所在銀行的小錢包。</p>
+    {% endif %}
+  </section>
+  {% endif %}
+  {% endif %}
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Email #{{ detail.item.id }} · Scribe{% endblock %}
+{% block content %}
+  <header class="page-heading"><div><a class="back-link" href="/emails">← 返回 Emails</a><p class="eyebrow">{{ detail.item.classification_status.value | label }}</p><h1>{{ detail.item.subject or "（無主旨）" }}</h1><p class="lede">{{ detail.item.sender }} · {{ detail.item.received_at|local_datetime }}</p></div></header>
+  <div class="detail-grid">
+    <section class="panel"><h2>Email metadata</h2><dl class="meta-list">
+      <div><dt>Gmail message ID</dt><dd>{{ detail.gmail_message_id }}</dd></div>
+      <div><dt>Thread ID</dt><dd>{{ detail.gmail_thread_id }}</dd></div>
+      <div><dt>收件者</dt><dd>{{ detail.recipients|join(", ") }}</dd></div>
+      <div><dt>Labels</dt><dd>{{ detail.labels|join(", ") }}</dd></div>
+      <div><dt>Parser</dt><dd>{{ detail.item.parser_name or "—" }} {{ detail.parser_version or "" }}</dd></div>
+      <div><dt>分類原因</dt><dd>{{ detail.classification_reason or "—" }}</dd></div>
+    </dl></section>
+    <aside class="stack"><section class="panel compact-panel"><h2>本機操作</h2><p>重新使用已保存本文與 PDF 擷取文字，不連線 Gmail。</p><form method="post" action="/emails/{{ detail.item.id }}/reparse"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">重新解析</button></form></section></aside>
+  </div>
+  {% if detail.attachments %}<section class="panel"><div class="panel-heading"><h2>附件</h2></div><div class="cards">{% for item in detail.attachments %}<article class="attachment-card"><strong>{{ item.filename or "未命名附件" }}</strong><span>{{ item.mime_type }} · {{ item.size_bytes }} bytes</span><span>{{ item.extraction_status }}{% if item.encrypted %} · 已加密{% endif %}</span>{% if item.error_message %}<small>{{ item.error_message }}</small>{% endif %}</article>{% endfor %}</div></section>{% endif %}
+  <section class="panel"><div class="panel-heading"><h2>交易</h2></div>{% with items=detail.transactions %}{% include "partials/transaction_table.html" %}{% endwith %}</section>
+  <section class="panel"><div class="panel-heading"><h2>Email 純文字</h2><span>{% if detail.has_html_body %}原信包含 HTML；此處不渲染 HTML{% endif %}</span></div><pre class="email-body">{{ detail.body_text or detail.body_summary or detail.snippet or "本文未保存。" }}</pre></section>
+{% endblock %}

@@ -1,0 +1,45 @@
+<div class="table-wrap transaction-table-wrap">
+  <table class="transaction-table{% if allow_batch_confirm %} batch-selectable{% endif %}">
+    <thead><tr>{% if allow_batch_confirm %}<th class="transaction-select-heading">選取</th>{% endif %}<th>時間</th><th>商家 / Email</th><th>金額</th><th>類型</th><th>卡片</th><th>狀態</th></tr></thead>
+    <tbody>
+      {% for item in items %}
+        <tr>
+          {% if allow_batch_confirm %}
+            <td class="transaction-select">
+              {% if not item.manually_confirmed and not item.manually_ignored %}
+                <label class="transaction-select-control">
+                  <input class="selection-checkbox" type="checkbox" name="transaction_ids"
+                         value="{{ item.id }}" aria-label="選取 {{ item.merchant or '待辨識商家' }}">
+                </label>
+              {% endif %}
+            </td>
+          {% endif %}
+          <td class="transaction-time" data-label="時間">{% if external_read_only %}{{ item.transaction_at|local_datetime }}{% else %}<a href="/transactions/{{ item.id }}?return_to={{ request_target|urlencode }}">{{ item.transaction_at|local_datetime }}</a>{% endif %}</td>
+          <td class="transaction-merchant"><strong>{{ item.merchant or "待辨識商家" }}</strong><small>{{ item.subject }}</small></td>
+          <td class="amount transaction-amount{% if item.transaction_type.value == 'refund' %} amount-refund{% endif %}">{{ item.amount_minor|money(item.currency) }}</td>
+          <td class="transaction-type" data-label="類型"><span class="tag">{{ item.transaction_type.value | label }}</span></td>
+          <td class="transaction-card-number" data-label="卡片">
+            {% if item.card_last_four %}
+              {% if item.institution_name %}<span class="transaction-card-bank">{{ item.institution_name }}</span> · {% endif %}
+              •••• {{ item.card_last_four }}
+              {% if item.is_supplementary_card %}<span class="status supplementary">副卡</span>{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td class="transaction-status">
+            {% if item.manually_ignored %}<span class="status ignored">已忽略</span>
+            {% elif item.manually_confirmed %}<span class="status confirmed">已確認</span>
+            {% else %}<span class="status pending">待確認</span>{% endif %}
+            {# A high-confidence parse is the normal case, so saying so adds
+               noise and a column of its own was empty on every page that
+               filters by transaction time. Only a parse worth a second look
+               is worth a number: the parsers cluster at 0.95+, so anything
+               below 0.9 stands out here, beside the review state. #}
+            {% if item.confidence < 0.9 %}<span class="status pending">信心度 {{ (item.confidence * 100)|round|int }}%</span>{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr class="transaction-empty"><td colspan="{{ 7 if allow_batch_confirm else 6 }}" class="empty-row">目前沒有符合條件的交易。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

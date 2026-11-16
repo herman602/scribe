@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}薪資範本 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Salary plan</p>
+    <h1>薪資範本</h1>
+    <p class="lede">這一頁設定「以後」要怎麼分配薪水。範本只描述目前的設定，已經產生的月份不會因為這裡的修改而改變：每一次產生都會把當下的範本、金額與訂閱證據整份凍結起來。要換薪轉銀行請新增一個範本，不要改舊的。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("created") %}<p class="notice">薪資範本已新增；請接著加入分配項目。</p>{% endif %}
+{% if request.query_params.get("saved") %}<p class="notice">已儲存。</p>{% endif %}
+
+<section class="panel" aria-label="新增薪資範本">
+  <h2>新增薪資範本</h2>
+  <form method="post" action="/allocations/templates" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>名稱
+      <input name="name" required>
+    </label>
+    <label>幣別
+      <input name="currency" value="{{ default_currency }}" maxlength="3" required>
+    </label>
+    <label>薪轉帳戶（必須是有 尚未分配 錢包的資產帳戶）
+      <select name="source_account_id" required>
+        {% for account in accounts %}<option value="{{ account.financial_account_id }}" {% if not account.has_unallocated_wallet %}disabled{% endif %}>{{ account.display_name }}（{{ account.currency }}）{% if not account.has_unallocated_wallet %} · 沒有 尚未分配 錢包{% endif %}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">新增範本</button>
+  </form>
+  <p class="muted">薪水一律先進入薪轉帳戶的 尚未分配 錢包，再由範本分配出去。沒有分配到的餘額會留在那裡，不會產生任何假分錄。</p>
+</section>
+
+{% if not rows %}
+<p class="muted">還沒有任何薪資範本。</p>
+{% endif %}
+
+{% for row in rows %}
+<section class="panel" aria-label="薪資範本 {{ row.template.name }}">
+  <div class="panel-heading">
+    <h2>{{ row.template.name }}{% if not row.template.is_active %} <span class="tag">已停用</span>{% endif %}</h2>
+    <span>版本 {{ row.template.version }}</span>
+  </div>
+  <dl class="meta-list">
+    <div><dt>幣別</dt><dd>{{ row.template.currency }}</dd></div>
+    <div><dt>薪轉帳戶</dt><dd>{{ row.source_account_name }}</dd></div>
+    <div><dt>薪資錢包</dt><dd>{% if row.source_wallet_name %}{{ row.source_wallet_name }}{% else %}<span class="tag">沒有可用的 尚未分配 錢包</span>{% endif %}</dd></div>
+  </dl>
+
+  <form method="post" action="/allocations/templates/{{ row.template.id }}" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ row.template.version }}">
+    <label>名稱
+      <input name="name" value="{{ row.template.name }}" required>
+    </label>
+    <label class="checkbox-row">
+      <input class="selection-checkbox" type="checkbox" name="is_active" value="1" {% if row.template.is_active %}checked{% endif %}>
+      仍在使用
+    </label>
+    <button type="submit">儲存範本</button>
+  </form>
+  <p class="muted">幣別與薪轉帳戶已固定，因為已產生的月份都是照著它們凍結的。要換帳戶請新增一個範本。</p>
+
+  <h3>每月分配</h3>
+  {% if not row.items %}
+  <p class="muted">這個範本還沒有分配項目，因此還不能產生月份。</p>
+  {% else %}
+  <form method="post" action="/allocations/templates/{{ row.template.id }}/amounts">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="template_version" value="{{ row.template.version }}">
+    <input type="hidden" name="currency" value="{{ row.template.currency }}">
+    <div class="plan-sheet">
+      {% for account_name, entries in row.plan_groups %}
+      <section class="plan-group" aria-label="{{ account_name }} 的每月分配">
+        <h4 class="plan-group-name">{{ account_name }}</h4>
+        <div class="plan-rows">
+          {% for entry in entries %}
+          <div class="plan-row">
+            <label class="plan-row-label" for="amount-{{ entry.item.id }}">{{ entry.item.name }}</label>
+            {% if entry.item.calculation_mode.value == "fixed" %}
+            <input type="hidden" name="version_{{ entry.item.id }}" value="{{ entry.item.version }}">
+            <input class="plan-row-amount" id="amount-{{ entry.item.id }}"
+                   name="amount_{{ entry.item.id }}"
+                   value="{{ entry.item.fixed_amount_minor | major(row.template.currency) }}"
+                   inputmode="decimal" autocomplete="off" spellcheck="false">
+            {% else %}
+            <span class="plan-row-amount is-derived">{{ calculation_labels.get(entry.item.calculation_mode.value, entry.item.calculation_mode.value) }}</span>
+            {% endif %}
+            <small class="plan-row-note">{{ entry.destination_wallet_name }}</small>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endfor %}
+    </div>
+    <div class="plan-sheet-total">
+      <span>固定項合計</span>
+      <strong>{{ row.planned_fixed_total_minor | money(row.template.currency) }}</strong>
+      <small>計算項（訂閱）在產生月份時才算出來，不含在這個合計裡。</small>
+    </div>
+    <div class="money-card-actions">
+      <button type="submit">儲存金額</button>
+    </div>
+  </form>
+  <p class="muted">改金額只影響「以後」產生的月份；已經產生的月份把當時的計畫整份凍結了，不會跟著變。要改目的錢包、計算方式或分類，用下面的逐項設定。</p>
+
+  <details class="plan-structure">
+    <summary>逐項設定（目的錢包、計算方式、分類、順序）</summary>
+  <div class="salary-item-grid">
+    {% for entry in row.items %}
+    <article class="salary-item{% if not entry.item.is_active %} salary-item-inactive{% endif %}">
+      <h4>{{ entry.item.name }}{% if not entry.item.is_active %} <span class="tag">已停用</span>{% endif %}</h4>
+      {% if entry.item.fixed_amount_minor is not none %}<p class="salary-amount">{{ entry.item.fixed_amount_minor | money(row.template.currency) }}</p>{% endif %}
+      <p class="muted">{{ entry.destination_account_name }} · {{ entry.destination_wallet_name }} · {{ calculation_labels.get(entry.item.calculation_mode.value, entry.item.calculation_mode.value) }}</p>
+      <form method="post" action="/allocations/templates/items/{{ entry.item.id }}" class="stacked-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="version" value="{{ entry.item.version }}">
+        <input type="hidden" name="template_version" value="{{ row.template.version }}">
+        <input type="hidden" name="item_currency" value="{{ row.template.currency }}">
+        <label>名稱
+          <input name="name" value="{{ entry.item.name }}" required>
+        </label>
+        <label>計算方式
+          <select name="calculation_mode" required>
+            {% for mode in calculation_modes %}<option value="{{ mode.value }}" {% if mode == entry.item.calculation_mode %}selected{% endif %}>{{ calculation_labels.get(mode.value, mode.value) }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>固定金額（只有「固定金額」才填）
+          <input name="fixed_amount" inputmode="decimal" value="{{ entry.item.fixed_amount_minor | major(row.template.currency) if entry.item.fixed_amount_minor is not none else '' }}">
+        </label>
+        <label>目的銀行與小錢包
+          <select name="destination_wallet_id" required>
+            {% for wallet in wallets_by_currency.get(row.template.currency, ()) %}<option value="{{ wallet.wallet_id }}" {% if wallet.wallet_id == entry.item.destination_wallet_id %}selected{% endif %}>{{ wallet.account_name }} · {{ wallet.wallet_name }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>預算分類（選填）
+          <select name="budget_category_id">
+            <option value="">不指定</option>
+            {% for category in categories %}{% if category.is_active or category.id == entry.item.budget_category_id %}<option value="{{ category.id }}" {% if category.id == entry.item.budget_category_id %}selected{% endif %}>{{ category.name }}{% if not category.is_active %}（已停用）{% endif %}</option>{% endif %}{% endfor %}
+          </select>
+        </label>
+        <label>顯示順序
+          <input name="display_order" inputmode="numeric" value="{{ entry.item.display_order }}">
+        </label>
+        <button type="submit">儲存項目（版本 {{ entry.item.version }}）</button>
+      </form>
+      {% if entry.item.is_active %}
+      <form method="post" action="/allocations/templates/items/{{ entry.item.id }}/deactivate">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="version" value="{{ entry.item.version }}">
+        <input type="hidden" name="template_version" value="{{ row.template.version }}">
+        <button type="submit" class="secondary">停用這個項目</button>
+      </form>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  </details>
+  {% endif %}
+
+  <h3>新增分配項目</h3>
+  <form method="post" action="/allocations/templates/{{ row.template.id }}/items" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="template_version" value="{{ row.template.version }}">
+    <input type="hidden" name="item_currency" value="{{ row.template.currency }}">
+    <label>名稱
+      <input name="name" required>
+    </label>
+    <label>計算方式
+      <select name="calculation_mode" required>
+        {% for mode in calculation_modes %}<option value="{{ mode.value }}">{{ calculation_labels.get(mode.value, mode.value) }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>固定金額（只有「固定金額」才填）
+      <input name="fixed_amount" inputmode="decimal">
+    </label>
+    <label>目的銀行與小錢包
+      <select name="destination_wallet_id" required>
+        {% for wallet in wallets_by_currency.get(row.template.currency, ()) %}<option value="{{ wallet.wallet_id }}">{{ wallet.account_name }} · {{ wallet.wallet_name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>預算分類（選填）
+      <select name="budget_category_id">
+        <option value="">不指定</option>
+        {% for category in categories %}{% if category.is_active %}<option value="{{ category.id }}">{{ category.name }}</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>顯示順序
+      <input name="display_order" inputmode="numeric" value="{{ row.items | length }}">
+    </label>
+    <button type="submit">新增項目</button>
+  </form>
+  <p class="muted">同一個範本裡，啟用中的項目名稱與目的小錢包都不可以重複；薪轉帳戶自己的 尚未分配 錢包也不能當成目的地，因為剩餘的錢本來就留在那裡。停用項目不會刪掉任何已經產生的月份。</p>
+</section>
+{% endfor %}
+{% endblock %}

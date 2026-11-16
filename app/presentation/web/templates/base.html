@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta name="htmx-config" content='{"allowEval":false,"allowScriptTags":false,"includeIndicatorStyles":false,"selfRequestsOnly":true}'>
+    <title>{% block title %}Scribe{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}">
+    <script src="{{ url_for('static', path='/vendor/htmx.min.js') }}" defer></script>
+    <script src="{{ url_for('static', path='/transaction-selection.js') }}" defer></script>
+    {% block scripts %}{% endblock %}
+  </head>
+  <body{% if not external_read_only %} class="has-mobile-primary-nav"{% endif %}>
+    <header class="site-header">
+      <div class="shell header-row">
+        <a class="brand" href="/">Scribe</a>
+        <nav class="desktop-nav" aria-label="主要導覽">
+          <a href="/" {% if request.url.path in ["/", "/money"] %}aria-current="page"{% endif %}>總覽</a>
+          {% if not external_read_only %}
+            <a href="/money/daily" {% if request.url.path.startswith("/money/daily") %}aria-current="page"{% endif %}>每日</a>
+            <a href="/money/accounts" {% if request.url.path.startswith("/money/account") %}aria-current="page"{% endif %}>帳戶與小錢包</a>
+            <a href="/budget" {% if request.url.path.startswith("/budget") %}aria-current="page"{% endif %}>預算</a>
+            <a href="/allocations" {% if request.url.path.startswith("/allocations") %}aria-current="page"{% endif %}>薪資</a>
+            <a href="/clearing" {% if request.url.path.startswith("/clearing") %}aria-current="page"{% endif %}>帳單暫存</a>
+            <a href="/subscriptions" {% if request.url.path.startswith("/subscriptions") %}aria-current="page"{% endif %}>訂閱</a>
+            <a href="/cards" {% if request.url.path.startswith("/cards") %}aria-current="page"{% endif %}>卡片</a>
+            <a href="/more" {% if request.url.path == "/more" or request.url.path.startswith("/transactions") or request.url.path.startswith("/emails") or request.url.path.startswith("/sync") %}aria-current="page"{% endif %}>更多</a>
+          {% endif %}
+          {% if external_read_only %}<a href="/reports" {% if request.url.path == "/reports" %}aria-current="page"{% endif %}>報表</a>{% endif %}
+        </nav>
+        <span class="local-badge">{% if external_read_only and can_confirm_transactions %}Access 保護{% elif external_read_only %}外網唯讀{% else %}僅限本機{% endif %}</span>
+        {# Page actions that must stay reachable while the page is scrolled;
+           the header is sticky, the panel heading that used to hold them is
+           not. #}
+        {% block header_actions %}{% endblock %}
+      </div>
+    </header>
+    {% if gmail_auth_notice %}
+      <aside class="oauth-banner oauth-banner-error" role="alert" aria-live="polite">
+        <div class="shell oauth-banner-content">
+          <strong>Gmail 授權提醒</strong>
+          {% if gmail_auth_notice.kind.value == "reauthorization_required" %}
+            <span>Gmail 授權已失效，同步已暫停。請在這台 Mac 執行 <code>uv run python -m app auth</code>，完成後再執行一次同步。</span>
+          {% elif gmail_auth_notice.kind.value == "testing_expires_tomorrow" %}
+            <span>目前使用 Google OAuth Testing 模式，授權明天需要更新。請在這台 Mac 執行 <code>uv run python -m app auth</code>。</span>
+          {% else %}
+            <span>Google OAuth Testing 模式的七天授權期限已到。請在這台 Mac 執行 <code>uv run python -m app auth</code>。</span>
+          {% endif %}
+        </div>
+      </aside>
+    {% endif %}
+    <main class="shell{% block main_class %}{% endblock %}">
+      {% block content %}{% endblock %}
+    </main>
+    {% if not external_read_only %}
+    <nav class="mobile-primary-nav" aria-label="手機主要導覽">
+      <a href="/" {% if request.url.path in ["/", "/money"] %}aria-current="page"{% endif %}><span aria-hidden="true">⌂</span>總覽</a>
+      <a href="/money/daily" {% if request.url.path.startswith("/money/daily") %}aria-current="page"{% endif %}><span aria-hidden="true">◷</span>每日</a>
+      <a href="/budget" {% if request.url.path.startswith("/budget") %}aria-current="page"{% endif %}><span aria-hidden="true">◎</span>預算</a>
+      <a href="/money/accounts" {% if request.url.path.startswith("/money/account") %}aria-current="page"{% endif %}><span aria-hidden="true">▤</span>帳戶</a>
+      <a href="/more" {% if request.url.path == "/more" %}aria-current="page"{% endif %}><span aria-hidden="true">•••</span>更多</a>
+    </nav>
+    {% endif %}
+    <footer class="shell site-footer">Scribe {{ version }} · 資料保留在這台電腦{% if external_read_only and can_confirm_transactions %} · 外網僅開放交易確認{% elif external_read_only %} · 目前為唯讀連線{% endif %}</footer>
+  </body>
+</html>

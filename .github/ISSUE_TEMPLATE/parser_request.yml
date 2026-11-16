@@ -1,0 +1,66 @@
+name: Bank parser request
+description: Propose a new notification format using a synthetic grammar only.
+title: "[Parser]: "
+labels:
+  - parser
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read `docs/adding-bank-parser.md` before filing this request.
+
+        **Do not forward or attach credentials, a database or backup, logs, a
+        real email or PDF, account or card numbers, or a financial screenshot.**
+        Do not paste a redacted real message. Recreate only the minimum field
+        labels, order, separators, optional fields, and repeated-row rules with
+        invented values and an `.invalid` sender.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and rights confirmation
+      options:
+        - label: I used only a hand-written or programmatically generated synthetic fixture.
+          required: true
+        - label: I did not include real financial data, hidden PDF metadata, a password, or mailbox identifiers.
+          required: true
+        - label: I have the right to contribute the synthetic example and requested behavior.
+          required: true
+
+  - type: input
+    id: institution
+    attributes:
+      label: Institution display name
+      description: The public bank name only; do not include your account details.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: shape
+    attributes:
+      label: Notification shape
+      options:
+        - Normalized plain-text email
+        - HTML-derived text
+        - Encrypted text PDF
+        - Unencrypted text PDF
+        - Image-only PDF (OCR is not currently supported)
+    validations:
+      required: true
+
+  - type: textarea
+    id: grammar
+    attributes:
+      label: Synthetic format grammar
+      description: List invented labels, order, delimiters, optionality, encoding, date, and currency rules.
+    validations:
+      required: true
+
+  - type: textarea
+    id: cases
+    attributes:
+      label: Expected cases
+      description: Describe synthetic purchase, refund, multi-row, malformed, and marketing cases.
+    validations:
+      required: true
+

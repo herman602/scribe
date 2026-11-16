@@ -1,0 +1,101 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "scribe-local"
+version = "0.1.0"
+description = "Local-first Gmail transaction notification tracker"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Scribe contributors" }]
+license = "AGPL-3.0-or-later"
+license-files = [
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "app/presentation/web/static/vendor/*LICENSE*",
+]
+keywords = ["gmail", "personal-finance", "sqlite", "local-first", "fastapi"]
+dependencies = [
+    "alembic>=1.18.5,<2.0",
+    "cryptography>=46,<50",
+    "fastapi>=0.116,<1.0",
+    "google-api-python-client>=2.198,<3.0",
+    "google-auth>=2.56,<3.0",
+    "google-auth-httplib2>=0.4,<1.0",
+    "google-auth-oauthlib>=1.4,<2.0",
+    "jinja2>=3.1,<4.0",
+    "keyring>=25.6,<26.0",
+    "pdfplumber>=0.11.9,<0.12",
+    "pydantic-settings>=2.10,<3.0",
+    "pypdf[crypto]>=6.14,<7.0",
+    "python-dotenv>=1.1,<2.0",
+    "sqlalchemy>=2.0.51,<2.1",
+    "typer>=0.16,<1.0",
+    "uvicorn>=0.35,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx2>=2.9,<3.0",
+    "mypy>=1.17,<2.0",
+    "pytest>=8.4,<10.0",
+    "pytest-cov>=6.2,<8.0",
+    "reportlab>=4.4,<5.0",
+    "ruff>=0.12,<1.0",
+]
+
+[project.scripts]
+scribe = "app.presentation.cli.app:main"
+
+[project.urls]
+Repository = "https://github.com/herman602/scribe"
+Issues = "https://github.com/herman602/scribe/issues"
+Documentation = "https://github.com/herman602/scribe/tree/main/docs"
+
+[tool.hatch.build]
+exclude = [
+    "/.coverage",
+    "/.superpowers/**",
+    "/.worktrees/**",
+    "/data/**",
+    "/dist/**",
+    "/config.toml",
+    "/credentials.json",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["app", "scripts", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/infrastructure/database/migrations/versions/*.py" = ["E501"]
+"tests/**/*.py" = ["S101"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+pretty = true
+show_error_codes = true
+files = ["app", "scripts", "tests"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --cov=app --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+omit = ["app/infrastructure/database/migrations/versions/*.py"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true

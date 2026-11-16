@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Emails · Scribe{% endblock %}
+{% block content %}
+  <header class="page-heading"><div><p class="eyebrow">Local archive</p><h1>Email 檢查</h1></div></header>
+  <form class="filter-panel email-filters" method="get" action="/emails"
+        hx-get="/emails" hx-target="#email-results" hx-push-url="true">
+    <label>寄件者或主旨<input name="query" value="{{ criteria.query or '' }}"></label>
+    <label>分類<select name="classification"><option value="">全部</option>{% for value in ["confirmed","likely","uncertain","not_transaction","ignored"] %}<option value="{{ value }}" {% if criteria.classification and criteria.classification.value == value %}selected{% endif %}>{{ value | label }}</option>{% endfor %}</select></label>
+    <label>處理狀態<select name="processing"><option value="">全部</option>{% for value in ["pending","processed","failed"] %}<option value="{{ value }}" {% if criteria.processing and criteria.processing.value == value %}selected{% endif %}>{{ value | label }}</option>{% endfor %}</select></label>
+    <div class="filter-actions"><button type="submit">套用篩選</button><a href="/emails">清除</a></div>
+  </form>
+  <div id="email-results">{% include "partials/email_results.html" %}</div>
+{% endblock %}

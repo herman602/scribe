@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}帳戶順序 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Arrange</p>
+    <h1>帳戶順序</h1>
+    <p class="lede">填上每個帳戶要排第幾，數字小的排前面。重複或跳號都可以，會照你填的大小重新編號；沒有金額會被更動。</p>
+  </div>
+</section>
+
+<form class="panel" method="post" action="/money/accounts/order">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <ul class="money-card-list">
+    {% for row in accounts %}
+    <li class="money-card">
+      <div class="money-card-main">
+        <strong>{{ row.account.display_name }}</strong>
+        <small>{{ row.balance_minor | money(row.account.currency) }}</small>
+      </div>
+      <div class="money-card-amount">
+        <label class="sr-only" for="position-{{ row.account.id }}">{{ row.account.display_name }} 的順序</label>
+        <input class="order-input" id="position-{{ row.account.id }}"
+               name="position_{{ row.account.id }}" value="{{ loop.index }}"
+               inputmode="numeric" autocomplete="off">
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="money-card-actions">
+    <button type="submit">儲存順序</button>
+    <a class="button-link" href="/money/accounts">取消</a>
+  </div>
+</form>
+{% endblock %}

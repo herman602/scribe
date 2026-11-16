@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}來源比對 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Source matching</p>
+    <h1>來源比對</h1>
+    <p class="lede">同一筆錢可能被手動記過一次、銀行又通知一次。這裡只決定它們是不是同一筆，不會產生任何分錄。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("confirmed") %}<p class="notice">已確認為同一筆。</p>{% endif %}
+{% if request.query_params.get("rejected") %}<p class="notice">已標記為不同筆。</p>{% endif %}
+{% if request.query_params.get("separated") %}<p class="notice">已另外建立一筆待分配事件。</p>{% endif %}
+
+<section class="panel" aria-label="待確認">
+  <div class="panel-heading"><h2>待確認（{{ view.pending_total }}）</h2></div>
+  {% if not view.pending %}
+  <p class="muted">沒有待確認的比對。</p>
+  {% else %}
+  <ul class="money-card-list">
+    {% for row in view.pending %}
+    <li class="money-card is-stacked">
+      <div class="money-card-main">
+        <strong>{{ row.event.merchant or "未填商家" }} · {{ row.score_bps }} bps</strong>
+        <small>手動：{{ row.event.amount_minor | money(row.event.currency) }} · {{ row.event.occurred_at | local_datetime }} · {{ row.event_card_display or "未指定卡片" }}</small>
+        <small>通知：{{ row.source_merchant or "未填商家" }} · {{ row.source_amount_minor | money(row.source_currency) }} · {{ row.source_occurred_at | local_datetime }}{% if row.source_card_last_four %} · ••{{ row.source_card_last_four }}{% endif %}</small>
+        <small>
+          {% for reason in row.reasons %}<span class="badge">{{ reason.value | label }}</span>{% endfor %}
+          {% if row.same_amount %}<span class="badge">金額幣別相同</span>{% endif %}
+          {% if row.time_distance_seconds is not none %}<span class="badge">相差 {{ (row.time_distance_seconds // 3600) }} 小時</span>{% endif %}
+        </small>
+      </div>
+      <div class="money-card-actions">
+        <form method="post" action="/money/source-links/{{ row.link_id }}/confirm">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">同一筆</button>
+        </form>
+        <form method="post" action="/money/source-links/{{ row.link_id }}/reject">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">不是同一筆</button>
+        </form>
+        <form method="post" action="/money/source-transactions/{{ row.transaction_id }}/separate">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">另外記一筆</button>
+        </form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+
+{% if view.decided %}
+<section class="panel" aria-label="已決定">
+  <div class="panel-heading"><h2>最近的決定</h2></div>
+  <ul class="money-card-list">
+    {% for row in view.decided %}
+    <li class="money-card">
+      <div class="money-card-main">
+        <strong>{{ row.event.merchant or "未填商家" }}</strong>
+        <small>{{ row.status.value | label }}{% if row.reviewed_at %} · {{ row.reviewed_at | local_datetime }}{% endif %}</small>
+        <small>{% for reason in row.reasons %}<span class="badge">{{ reason.value | label }}</span>{% endfor %}</small>
+      </div>
+      <div class="money-card-amount"><a href="/money/events/{{ row.event.id }}">明細</a></div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

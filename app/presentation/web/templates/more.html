@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}更多功能 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">More</p>
+    <h1>更多功能</h1>
+    <p class="lede">設定、稽核與較低頻率的工作集中在這裡；手機首頁只保留每天最常用的入口。</p>
+  </div>
+</section>
+
+<section class="feature-section" aria-labelledby="money-tools">
+  <h2 id="money-tools">資金工作</h2>
+  <nav class="feature-grid" aria-label="資金工作">
+    <a class="money-link" href="/money/expenses/new"><strong>新增花費</strong><small>現金或信用卡</small></a>
+    <a class="money-link" href="/money/bank-movements/new"><strong>銀行異動</strong><small>利息、扣款、存提款與轉帳</small></a>
+    <a class="money-link" href="/money/reconcile"><strong>帳戶對帳</strong><small>觀測銀行餘額並處理差額</small></a>
+    <a class="money-link" href="/money/source-links"><strong>來源比對</strong><small>連結 Gmail 與手動事件</small></a>
+    <a class="money-link" href="/money/review"><strong>待分配事件</strong><small>分類與指定資金來源</small></a>
+    <a class="money-link" href="/cards"><strong>卡片設定</strong><small>銀行、末四碼與扣款帳戶</small></a>
+  </nav>
+</section>
+
+<section class="feature-section" aria-labelledby="planning-tools">
+  <h2 id="planning-tools">規劃與帳單</h2>
+  <nav class="feature-grid" aria-label="規劃與帳單">
+    <a class="money-link" href="/budget"><strong>本月預算</strong><small>分類、目標與緩衝</small></a>
+    <a class="money-link" href="/allocations"><strong>薪資分配</strong><small>每月資金配置與轉帳確認</small></a>
+    <a class="money-link" href="/clearing"><strong>帳單暫存</strong><small>撥款與信用卡自動扣繳</small></a>
+    <a class="money-link" href="/subscriptions"><strong>訂閱管理</strong><small>週期價格與月份需求</small></a>
+  </nav>
+</section>
+
+<section class="feature-section" aria-labelledby="source-tools">
+  <h2 id="source-tools">Gmail 與報表</h2>
+  <nav class="feature-grid" aria-label="Gmail 與報表">
+    <a class="money-link" href="/transactions"><strong>交易通知</strong><small>搜尋與人工確認 parser 結果</small></a>
+    <a class="money-link" href="/emails"><strong>Emails</strong><small>分類、解析與原始證據</small></a>
+    <a class="money-link" href="/reports"><strong>報表</strong><small>趨勢、商家與卡片統計</small></a>
+    <a class="money-link" href="/sync"><strong>Gmail 同步</strong><small>進度、錯誤與重新同步</small></a>
+  </nav>
+</section>
+{% endblock %}

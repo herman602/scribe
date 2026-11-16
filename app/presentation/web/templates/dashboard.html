@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}總覽 · Scribe{% endblock %}
+{% block header_actions %}
+  {% if can_confirm_transactions %}
+    <div class="header-actions">
+      <button class="bulk-confirm-button" type="submit" form="dashboard-confirm-form"
+              data-bulk-confirm="dashboard-confirm-form" hidden>確認 0 筆交易</button>
+      <button class="selection-mode-toggle secondary" type="button"
+              data-selection-toggle="dashboard-confirm-form" aria-pressed="false">選取交易</button>
+    </div>
+  {% endif %}
+{% endblock %}
+{% block content %}
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">{% if external_read_only and can_confirm_transactions %}Access 保護交易總覽{% elif external_read_only %}唯讀交易總覽{% else %}本機交易總覽{% endif %}</p>
+      <h1>交易總覽</h1>
+    </div>
+    {% if dashboard.last_sync %}
+      <div class="sync-chip">
+        <span>上次同步</span>
+        <strong>{{ dashboard.last_sync.finished_at|local_datetime }}</strong>
+        <small>{{ dashboard.last_sync.mode }} · {{ dashboard.last_sync.status }}</small>
+      </div>
+    {% else %}
+      <div class="sync-chip"><span>尚無同步紀錄</span><strong>—</strong></div>
+    {% endif %}
+  </header>
+
+  <section class="metrics" aria-label="交易摘要">
+    <article class="metric metric-primary">
+      <span>本月</span>
+      {% for total in dashboard.month_totals %}
+        <strong>{{ total.amount_minor|money(total.currency) }}</strong>
+      {% else %}<strong>尚無資料</strong>{% endfor %}
+    </article>
+    <article class="metric">
+      <span>本週</span>
+      {% for total in dashboard.week_totals %}
+        <strong>{{ total.amount_minor|money(total.currency) }}</strong>
+      {% else %}<strong>—</strong>{% endfor %}
+    </article>
+    <article class="metric">
+      <span>今天</span>
+      {% for total in dashboard.today_totals %}
+        <strong>{{ total.amount_minor|money(total.currency) }}</strong>
+      {% else %}<strong>—</strong>{% endfor %}
+    </article>
+    <article class="metric compact">
+      <span>有效交易</span><strong>{{ dashboard.transaction_count }}</strong>
+      <small>{{ dashboard.unconfirmed_count }} 筆待確認</small>
+    </article>
+    <article class="metric compact {% if dashboard.parser_failure_count %}warn{% endif %}">
+      <span>Parser 失敗</span><strong>{{ dashboard.parser_failure_count }}</strong>
+      <small>{% if external_read_only %}請回到本機處理{% else %}可從 Email 明細重試{% endif %}</small>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel-heading">
+      <div><p class="eyebrow">Recent {{ recent_window }} days</p><h2>過去 {{ recent_window }} 天交易</h2></div>
+      <div class="panel-heading-actions">
+        <nav class="pill-row pill-row-inline" aria-label="時間範圍">
+          {% for choice in recent_window_choices %}
+          <a class="pill{% if choice == recent_window %} is-selected{% endif %}"
+             href="{{ request.url.path }}?days={{ choice }}"
+             {% if choice == recent_window %}aria-current="true"{% endif %}>{{ choice }} 天</a>
+          {% endfor %}
+        </nav>
+        {% if not external_read_only %}<a class="text-link" href="/transactions">查看全部 →</a>{% endif %}
+      </div>
+    </div>
+    {% if can_confirm_transactions %}
+      <form id="dashboard-confirm-form" class="batch-confirm-form" method="post"
+            action="/transactions/confirm" data-transaction-selection>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="return_to" value="/">
+    {% endif %}
+    <div class="transaction-days">
+      {% for day in recent_days %}
+        <details class="transaction-day" {% if loop.first %}open{% endif %}>
+          <summary>
+            <span>{{ day.label }}</span>
+            <small class="transaction-day-meta">
+              {% if day.unconfirmed_count %}<span class="status pending">待確認 {{ day.unconfirmed_count }} 筆{% for total in day.unconfirmed_totals %} · {{ total.amount_minor|money(total.currency) }}{% endfor %}</span>{% endif %}
+              {% for total in day.spending_totals %}<span class="day-spending">{{ total.amount_minor|money(total.currency) }}</span>{% endfor %}
+              <span>{{ day.items|length }} 筆</span>
+            </small>
+          </summary>
+          <div class="transaction-day-content">
+            {% with items=day.items, allow_batch_confirm=can_confirm_transactions %}
+              {% include "partials/transaction_table.html" %}
+            {% endwith %}
+          </div>
+        </details>
+      {% else %}
+        <p class="empty-row">過去 {{ recent_window }} 天沒有交易。</p>
+      {% endfor %}
+    </div>
+    {% if can_confirm_transactions %}
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}排序 · {{ row.account.display_name }} · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Arrange</p>
+    <h1>{{ row.account.display_name }} 的小錢包順序</h1>
+    <p class="lede">填上每個小錢包要排第幾，數字小的在上面。重複或跳號都可以，會照你填的大小重新編號；沒有金額會被更動。</p>
+  </div>
+</section>
+
+<form class="panel" method="post" action="/money/accounts/{{ row.account.id }}/order">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <ul class="money-card-list">
+    {% for wallet in row.wallets %}
+    {% set label = wallet.name %}
+    <li class="money-card">
+      <div class="money-card-main">
+        <strong>{{ label }}</strong>
+        <small>{{ wallet.balance_minor | money(wallet.currency) }}</small>
+      </div>
+      <div class="money-card-amount">
+        <label class="sr-only" for="position-{{ wallet.wallet_id }}">{{ label }} 的順序</label>
+        <input class="order-input" id="position-{{ wallet.wallet_id }}"
+               name="position_{{ wallet.wallet_id }}" value="{{ loop.index }}"
+               inputmode="numeric" autocomplete="off">
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  <div class="money-card-actions">
+    <button type="submit">儲存順序</button>
+    <a class="button-link" href="/money/accounts">取消</a>
+  </div>
+</form>
+{% endblock %}

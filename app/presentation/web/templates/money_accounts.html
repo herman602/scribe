@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}帳戶 · Scribe{% endblock %}
+{% block main_class %} shell-wide{% endblock %}
+{% block content %}
+<section class="page-heading is-compact">
+  <div>
+    <p class="eyebrow">Accounts</p>
+    <h1>帳戶與小錢包</h1>
+    <p class="lede">改列的金額＝在同一個帳戶裡挪錢，欄底總計不變；錢真的進出銀行請用「記錄銀行異動」。</p>
+  </div>
+  <div class="panel-heading-actions">
+    <a class="button-link" href="/money/accounts/new">新增帳戶</a>
+    {% if accounts | length > 1 %}<a class="button-link" href="/money/accounts/order">帳戶順序</a>{% endif %}
+    <a class="button-link" href="/money/bank-movements/new">記錄銀行異動</a>
+    <a class="button-link" href="/money/reconcile">對帳</a>
+  </div>
+</section>
+
+{% if request.query_params.get("recorded") %}<p class="notice">已記錄銀行異動。</p>{% endif %}
+{% if request.query_params.get("transferred") %}<p class="notice">已記錄轉帳。</p>{% endif %}
+{% if request.query_params.get("created") %}<p class="notice">帳戶與期初餘額已建立。</p>{% endif %}
+{% if request.query_params.get("reallocated") %}<p class="notice">已重新分配小錢包。</p>{% endif %}
+{% if request.query_params.get("arranged") == "wallets" %}<p class="notice">已儲存小錢包順序。</p>{% endif %}
+{% if request.query_params.get("arranged") == "accounts" %}<p class="notice">已儲存帳戶順序。</p>{% endif %}
+
+
+{% macro wallet_cell(wallet, row, editable, csrf_token, client_token) %}
+{% set is_unallocated = wallet.purpose.value == "unallocated" %}
+{% set extra_class = "is-reserve" if wallet.name == "緊急預備金" and not is_unallocated else ("is-unallocated" if is_unallocated else "") %}
+{% set label = wallet.name %}
+{% if editable %}
+<form class="sheet-cell{% if extra_class %} {{ extra_class }}{% endif %}" method="post" action="/money/wallets/{{ wallet.wallet_id }}/balance">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="currency" value="{{ wallet.currency }}">
+  <input type="hidden" name="expected_balance_minor" value="{{ wallet.balance_minor }}">
+  <input type="hidden" name="client_token" value="{{ client_token }}-{{ wallet.wallet_id }}">
+  <label class="sheet-cell-label" for="wallet-{{ wallet.wallet_id }}">{{ label }}</label>
+  <input class="sheet-cell-amount" id="wallet-{{ wallet.wallet_id }}" name="target_balance"
+         value="{{ wallet.balance_minor | major(wallet.currency) }}"
+         inputmode="decimal" autocomplete="off" spellcheck="false">
+  {% if wallet.reserved_minor %}
+  <small class="sheet-cell-note">預留 {{ wallet.reserved_minor | money(wallet.currency) }}</small>
+  {% endif %}
+  <div class="sheet-cell-apply">
+    <label class="sr-only" for="counterpart-{{ wallet.wallet_id }}">對象小錢包</label>
+    <select id="counterpart-{{ wallet.wallet_id }}" name="counterpart_wallet_id">
+      {% for other in row.wallets %}{% if other.wallet_id != wallet.wallet_id %}
+      <option value="{{ other.wallet_id }}">{{ other.name }}</option>
+      {% endif %}{% endfor %}
+    </select>
+    <button type="submit">套用</button>
+  </div>
+</form>
+{% else %}
+<div class="sheet-cell is-readonly{% if extra_class %} {{ extra_class }}{% endif %}">
+  <span class="sheet-cell-label">{{ label }}</span>
+  <span class="sheet-cell-amount">{{ wallet.balance_minor | major(wallet.currency) }}</span>
+  {% if wallet.reserved_minor %}
+  <small class="sheet-cell-note">預留 {{ wallet.reserved_minor | money(wallet.currency) }}</small>
+  {% endif %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{% if not accounts %}
+<p class="muted">還沒有任何帳戶。</p>
+{% else %}
+<div class="ledger-sheet-wrap">
+  <div class="ledger-sheet">
+    {% for row in accounts %}
+    {% set is_liability = row.account.account_type.value == "card_liability" %}
+    {% set editable = not is_liability and row.wallets | length > 1 %}
+    <section class="sheet-column" aria-label="帳戶 {{ row.account.display_name }}">
+      <header class="sheet-column-head">
+        <h2><a href="/money/accounts/{{ row.account.id }}">{{ row.account.display_name }}</a></h2>
+        <p class="sheet-reference">{{ row.account.masked_reference or row.account.institution_code }}</p>
+        {% if row.wallets | length > 1 %}
+        <a class="sheet-arrange" href="/money/accounts/{{ row.account.id }}/order">排序</a>
+        {% endif %}
+        {% if is_liability %}<span class="status ignored">帳本餘額</span>
+        {% elif not row.latest_snapshot %}<span class="status pending">尚未觀測</span>
+        {% elif row.latest_snapshot.difference_minor %}<span class="status pending">有差額</span>
+        {% else %}<span class="status confirmed">已對帳</span>{% endif %}
+      </header>
+
+      <div class="sheet-rows">
+        {% for wallet in row.wallets %}
+        {{ wallet_cell(wallet, row, editable, csrf_token, client_token) }}
+        {% endfor %}
+      </div>
+
+      <footer class="sheet-total">
+        <span>總計</span>
+        <strong>{{ row.balance_minor | money(row.account.currency) }}</strong>
+        {% if not is_liability %}
+        <small>可用 {{ row.available_minor | money(row.account.currency) }}</small>
+        {% endif %}
+      </footer>
+      {% if row.latest_snapshot and row.latest_snapshot.difference_minor %}
+      <p class="sheet-difference">與銀行差 {{ row.latest_snapshot.difference_minor | money(row.account.currency) }}</p>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

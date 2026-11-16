@@ -1,0 +1,86 @@
+<section class="panel">
+  <div class="panel-heading">
+    <h2>本機 Worker</h2>
+    <span>{{ (worker.status.value if worker.status else "idle") | label }}</span>
+  </div>
+  {% if worker.mode %}
+  <dl class="meta-list">
+    <div><dt>模式</dt><dd>{{ worker.mode.value | label }}</dd></div>
+    <div><dt>Run ID</dt><dd>{{ worker.run_id or "建立中" }}</dd></div>
+    <div><dt>開始</dt><dd>{{ worker.started_at|local_datetime }}</dd></div>
+    {% if worker.finished_at %}<div><dt>結束</dt><dd>{{ worker.finished_at|local_datetime }}</dd></div>{% endif %}
+    {% if worker.message %}<div><dt>訊息</dt><dd>{{ worker.message }}</dd></div>{% endif %}
+  </dl>
+  {% else %}
+  <p class="muted">這個 Web process 目前沒有背景工作。</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>Mailbox cursor</h2>
+    <span>持久化於 SQLite</span>
+  </div>
+  {% if sync.cursors %}
+  {% for cursor in sync.cursors %}
+  <dl class="meta-list">
+    <div><dt>帳號</dt><dd>{{ cursor.profile_email }}</dd></div>
+    <div><dt>historyId</dt><dd>{{ cursor.committed_history_id or "尚未建立 baseline" }}</dd></div>
+    <div><dt>上次成功</dt><dd>{{ cursor.last_successful_sync_at|local_datetime }}</dd></div>
+    <div><dt>需 reconciliation</dt><dd>{{ "是" if cursor.reconciliation_required else "否" }}</dd></div>
+  </dl>
+  {% endfor %}
+  {% else %}
+  <p class="muted">尚無已授權 Gmail 帳號。</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <h2>最近同步</h2>
+    <span>{{ sync.runs|length }} 筆</span>
+  </div>
+  <div class="table-wrap">
+    <table class="responsive-data-table sync-data-table">
+      <thead>
+        <tr>
+          <th>時間 / 模式</th>
+          <th>狀態</th>
+          <th>進度</th>
+          <th>資料變更</th>
+          <th>Parser</th>
+          <th>historyId / 錯誤</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for run in sync.runs %}
+        <tr>
+          <td data-label="時間 / 模式"><strong>{{ run.started_at|local_datetime }}</strong><small>{{ run.mode.value | label }}</small></td>
+          <td data-label="狀態">
+            <span class="status {{ "pending" if run.status.value in ("queued", "running") else "confirmed" if run.status.value == "succeeded" else "error" }}">{{ run.status.value | label }}</span>
+            {% if run.cancel_requested %}<small>cancel requested</small>{% endif %}
+          </td>
+          <td data-label="進度"><strong>{{ run.pages_processed }} pages</strong><small>{{ run.discovered_count }} discovered</small></td>
+          <td data-label="資料變更"><strong>+{{ run.new_count }} / ~{{ run.updated_count }} / −{{ run.deleted_count }}</strong></td>
+          <td data-label="Parser"><strong>{{ run.parsed_count }} parsed</strong><small>{{ run.parser_failed_count }} failed</small></td>
+          <td data-label="historyId / 錯誤">
+            <strong>{{ run.end_history_id or run.start_history_id or "—" }}</strong>
+            {% if run.error_message %}<small>{{ run.error_code }} · {{ run.error_message }}</small>{% endif %}
+          </td>
+          <td data-label="操作">
+            {% if run.status.value == "running" %}
+            <form method="post" action="/sync/{{ run.id }}/cancel">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="danger" type="submit" {% if run.cancel_requested %}disabled{% endif %}>取消</button>
+            </form>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="empty-row">尚無同步紀錄</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>

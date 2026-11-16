@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}{{ view.label }} 薪資分配 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Salary allocation</p>
+    <h1>{{ view.label }} 薪資分配</h1>
+    <p class="lede">先記錄或選擇一筆真的入帳的薪水，再產生這個月的分配草稿。草稿會把範本、金額與整份訂閱證據凍結下來，之後改範本或改訂閱價格都不會動到它。核准時，同一個帳戶裡的項目會立刻在小錢包之間重新分配；在別的帳戶的項目只會變成「待手動轉帳」，等你真的轉完帳再按「已轉帳」。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("received") %}<p class="notice">薪資入帳已記錄。</p>{% endif %}
+{% if request.query_params.get("generated") %}<p class="notice">分配草稿已產生。</p>{% endif %}
+{% if request.query_params.get("approved") %}<p class="notice">分配已核准。跨帳戶的項目仍在等你完成真正的轉帳。</p>{% endif %}
+{% if request.query_params.get("cancelled") %}<p class="notice">草稿已取消，內容仍然保留。</p>{% endif %}
+{% if request.query_params.get("transferred") %}<p class="notice">已記錄一筆真實的帳戶間轉帳。</p>{% endif %}
+{% if view.period_is_closed %}<p class="notice">這個月已經結算，不能再產生新的分配。</p>{% endif %}
+
+{% if view.has_nothing_to_do %}
+<section class="panel empty-guidance" aria-label="這個月為什麼是空的">
+  {% if view.is_before_opening_cutoff %}
+  <h2>這個月不需要分配</h2>
+  <p>期初結轉的時間是 {{ view.opening_cutoff_at | local_datetime }}。在那之前收到的薪水已經算進期初餘額裡，再分配一次會把同一筆錢算兩遍。</p>
+  <p class="muted">這個月的歷史仍然查得到，只是不會再產生新的分錄。要開始使用，請從 {{ view.opening_cutoff_at.year }}-{{ "%02d" | format(view.opening_cutoff_at.month) }} 之後的月份開始。</p>
+  {% elif not view.selected %}
+  <h2>還沒有選定薪資範本</h2>
+  <p>先在上面挑一個範本，這個月才知道要照哪一份計畫分配。</p>
+  <p class="muted"><a href="/allocations/templates">去設定薪資計畫 →</a></p>
+  {% else %}
+  <h2>還沒有這個月的薪資入帳</h2>
+  <p>分配草稿要有一筆真的入帳才能產生。請先用下面的「記錄薪資入帳」記一筆，金額會先進 {{ view.selected.source_account_name }} 的 尚未分配 錢包，再照計畫分出去。</p>
+  <p class="muted">可用的入帳必須是已過帳的存入、幣別相同、整筆落在該錢包，而且尚未被其他分配使用。</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="panel" aria-label="選擇月份與範本">
+  <h2>月份與範本</h2>
+  <form method="get" action="/allocations/{{ view.label }}" class="subscription-filter">
+    <label>月份
+      <input type="month" name="period" value="{{ view.label }}" disabled>
+    </label>
+    <label>範本
+      <select name="template_id">
+        <option value="">請選擇</option>
+        {% for row in view.templates %}<option value="{{ row.template.id }}" {% if view.selected and row.template.id == view.selected.template.id %}selected{% endif %}>{{ row.template.name }}（{{ row.template.currency }}）{% if not row.template.is_active %} · 已停用{% endif %}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit">顯示</button>
+  </form>
+  <p class="muted"><a class="text-link" href="/allocations/templates">管理薪資範本</a></p>
+</section>
+
+{% if not view.selected %}
+<p class="muted">請先選擇一個薪資範本。還沒有範本的話，先到<a class="text-link" href="/allocations/templates">薪資範本</a>建立一個。</p>
+{% else %}
+
+{% set plan = view.selected %}
+
+{% if not view.live_run %}
+<section class="panel" aria-label="記錄薪資入帳">
+  <h2>記錄薪資入帳</h2>
+  <p class="muted">這是 B5 唯一的銀行收入入口，只用來記錄薪水本身。它會把金額記入 {{ plan.source_account_name }} 的 {{ plan.source_wallet_name or "尚未分配" }}，並且對同一個 token 只會記錄一次。</p>
+  <form method="post" action="/allocations/{{ view.label }}/salary-receipt" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="template_id" value="{{ plan.template.id }}">
+    <input type="hidden" name="period" value="{{ view.label }}">
+    <input type="hidden" name="client_token" value="{{ client_token }}">
+    <input type="hidden" name="currency" value="{{ plan.template.currency }}">
+    <label>金額
+      <input name="amount" inputmode="decimal" required>
+    </label>
+    <label>入帳時間
+      <input type="datetime-local" name="occurred_at" required>
+    </label>
+    <label>備註（選填）
+      <input name="note">
+    </label>
+    <button type="submit">記錄入帳</button>
+  </form>
+</section>
+
+<section class="panel" aria-label="產生分配草稿">
+  <h2>產生分配草稿</h2>
+  {% if not view.eligible_events %}
+  <p class="muted">目前沒有可用的薪資入帳。可用的入帳必須是已過帳的存入、幣別相同，而且整筆金額都落在 {{ plan.source_account_name }} 的 尚未分配 錢包，對面是收入科目，並且還沒有被其他分配使用。</p>
+  {% else %}
+  <form method="post" action="/allocations/{{ view.label }}/generate" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="template_id" value="{{ plan.template.id }}">
+    <input type="hidden" name="period" value="{{ view.label }}">
+    <input type="hidden" name="currency" value="{{ plan.template.currency }}">
+    <label>薪資入帳
+      <select name="salary_event_id" required>
+        {% for candidate in view.eligible_events %}<option value="{{ candidate.event.id }}">{{ candidate.event.amount_minor | money(candidate.event.currency) }} · {{ candidate.event.occurred_at | local_datetime }}</option>{% endfor %}
+      </select>
+    </label>
+    {% for entry in plan.items %}{% if entry.item.is_active and entry.item.calculation_mode.value == "manual" %}
+    <input type="hidden" name="manual_item_id" value="{{ entry.item.id }}">
+    <label>{{ entry.item.name }}（手動金額）
+      <input name="manual_amount" inputmode="decimal" value="0" required>
+    </label>
+    {% endif %}{% endfor %}
+    <button type="submit">產生草稿</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if view.live_run %}
+{% set run = view.live_run %}
+<section class="panel" aria-label="{{ view.label }} 分配內容">
+  <div class="panel-heading">
+    <h2>分配內容</h2>
+    <span><span class="tag">已凍結</span> 第 {{ run.run.generation }} 代 · 範本版本 {{ run.run.template_version }}</span>
+  </div>
+  <p class="muted">範本名稱快照：{{ run.run.template_name_snapshot }}。這一頁顯示的每一個數字都來自產生當下凍結的內容，不會重新計算。</p>
+
+  <div class="salary-summary">
+    <div class="salary-figure">
+      <span>薪資</span>
+      <strong>{{ run.run.salary_amount_minor | money(run.run.currency) }}</strong>
+    </div>
+    <div class="salary-figure">
+      <span>已規劃</span>
+      <strong>{{ run.run.planned_amount_minor | money(run.run.currency) }}</strong>
+    </div>
+    <div class="salary-figure">
+      <span>留在 {{ run.source.wallet_name }} 的餘額</span>
+      <strong>{{ run.run.remainder_minor | money(run.run.currency) }}</strong>
+    </div>
+    <div class="salary-figure">
+      <span>狀態</span>
+      <strong>{{ run_status_labels.get(run.run.status.value, run.run.status.value) }}</strong>
+    </div>
+  </div>
+
+  <dl class="meta-list">
+    <div><dt>實際帳面餘額</dt><dd>{{ run.source.balance_minor | money(run.source.currency) }}</dd></div>
+    <div><dt>已保留</dt><dd>{{ run.source.reserved_minor | money(run.source.currency) }}</dd></div>
+    <div><dt>可用</dt><dd>{{ run.source.available_minor | money(run.source.currency) }}</dd></div>
+    <div><dt>薪轉帳戶</dt><dd>{{ run.source.account_name }} · {{ run.source.wallet_name }}</dd></div>
+    <div><dt>核准分錄</dt><dd>{% if run.run.approval_entry_id %}#{{ run.run.approval_entry_id }}{% else %}—{% endif %}</dd></div>
+  </dl>
+
+  <div class="salary-item-grid">
+    {% for entry in run.items %}
+    <article class="salary-item">
+      <h3>{{ entry.item.name_snapshot }}</h3>
+      <p class="salary-amount">{{ entry.item.amount_minor | money(entry.item.currency) }}</p>
+      <p>
+        <span class="tag">{{ item_status_labels.get(entry.item.status.value, entry.item.status.value) }}</span>
+        <span class="tag">{{ calculation_labels.get(entry.item.calculation_mode.value, entry.item.calculation_mode.value) }}</span>
+      </p>
+      <dl class="meta-list">
+        <div><dt>目的地</dt><dd>{{ entry.item.destination_account_name_snapshot }} · {{ entry.item.destination_wallet_name_snapshot }}</dd></div>
+        <div><dt>撥款方式</dt><dd>{{ fulfillment_labels.get(entry.item.fulfillment_mode.value, entry.item.fulfillment_mode.value) }}</dd></div>
+        <div><dt>預算分類</dt><dd>{{ entry.item.budget_category_name_snapshot or "—" }}</dd></div>
+        {% if entry.item.transferred_at %}
+        <div><dt>轉帳時間</dt><dd>{{ entry.item.transferred_at | local_datetime }}</dd></div>
+        <div><dt>轉帳分錄</dt><dd>#{{ entry.item.transfer_entry_id }}</dd></div>
+        {% endif %}
+      </dl>
+
+      {% if entry.item.calculation_mode.value == "subscription_requirement" %}
+      <details class="salary-evidence">
+        <summary>訂閱需求明細（{{ entry.evidence.contribution_total_minor | money(entry.item.currency) }}）</summary>
+        <ul class="salary-evidence-list">
+          {% for line in run.evidence.items %}{% if line.funding_wallet_id == entry.item.destination_wallet_id %}
+          <li>
+            <span>{{ line.name }}</span>
+            <span>{{ line.contribution_minor | money(line.currency) }}</span>
+            <small>{{ reason_labels.get(line.reason.value, line.reason.value) }}{% if line.price_period_id %} · 價格區間 #{{ line.price_period_id }}{% endif %}{% if line.cycle_position is not none %} · 第 {{ line.cycle_position + 1 }}/{{ line.cadence_months }} 個月{% endif %}</small>
+          </li>
+          {% endif %}{% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+
+      {% if entry.is_waiting_transfer %}
+      <form method="post" action="/allocations/items/{{ entry.item.id }}/mark-transferred" class="stacked-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="version" value="{{ entry.item.version }}">
+        <input type="hidden" name="period" value="{{ view.label }}">
+        <input type="hidden" name="template_id" value="{{ plan.template.id }}">
+        <label>實際轉帳時間
+          <input type="datetime-local" name="effective_at" required>
+        </label>
+        <button type="submit">已轉帳</button>
+      </form>
+      <p class="muted">按下之後才會記錄真正的帳戶間移動。Scribe 不會自動假設銀行已經轉出。</p>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+
+  <details class="salary-evidence">
+    <summary>這個月凍結的完整訂閱證據（合計 {{ run.subscription_total_minor | money(run.run.currency) }}）</summary>
+    <ul class="salary-evidence-list">
+      {% for line in run.evidence.items %}
+      <li>
+        <span>{{ line.name }}</span>
+        <span>{{ line.contribution_minor | money(line.currency) }}</span>
+        <small>{{ line.funding_wallet_name }} · {{ line.budget_category_name }} · {{ reason_labels.get(line.reason.value, line.reason.value) }}{% if line.price_period_id %} · 價格區間 #{{ line.price_period_id }}{% endif %}</small>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+
+  {% if run.is_draft %}
+  <div class="salary-actions">
+    <form method="post" action="/allocations/runs/{{ run.run.id }}/approve">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="version" value="{{ run.run.version }}">
+      <input type="hidden" name="period" value="{{ view.label }}">
+      <input type="hidden" name="template_id" value="{{ plan.template.id }}">
+      <button type="submit">核准這份分配</button>
+    </form>
+    <form method="post" action="/allocations/runs/{{ run.run.id }}/cancel">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="version" value="{{ run.run.version }}">
+      <input type="hidden" name="period" value="{{ view.label }}">
+      <input type="hidden" name="template_id" value="{{ plan.template.id }}">
+      <button type="submit" class="secondary">取消草稿</button>
+    </form>
+  </div>
+
+  <form method="post" action="/allocations/runs/{{ run.run.id }}/regenerate" class="stacked-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ run.run.version }}">
+    <input type="hidden" name="period" value="{{ view.label }}">
+    <input type="hidden" name="template_id" value="{{ plan.template.id }}">
+    {% for entry in plan.items %}{% if entry.item.is_active and entry.item.calculation_mode.value == "manual" %}
+    <input type="hidden" name="manual_item_id" value="{{ entry.item.id }}">
+    <label>{{ entry.item.name }}（手動金額）
+      <input name="manual_amount" inputmode="decimal" value="0" required>
+    </label>
+    {% endif %}{% endfor %}
+    <button type="submit" class="secondary">用目前的範本重新產生（第 {{ run.run.generation + 1 }} 代）</button>
+  </form>
+  <p class="muted">重新產生會把這一代標記為已取消並保留下來，再建立下一代。已核准的分配永遠不能重新產生。</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if view.generations %}
+<section class="panel" aria-label="這個月的產生紀錄">
+  <h2>產生紀錄</h2>
+  <ul class="salary-evidence-list">
+    {% for generation in view.generations %}
+    <li>
+      <span>第 {{ generation.generation }} 代</span>
+      <span>{{ generation.planned_amount_minor | money(generation.currency) }}</span>
+      <small>{{ run_status_labels.get(generation.status.value, generation.status.value) }} · 範本版本 {{ generation.template_version }} · 產生於 {{ generation.generated_at | local_datetime }}</small>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="muted">被取消的代次會完整保留，不會被刪除或覆寫。</p>
+</section>
+{% endif %}
+
+{% endif %}
+{% endblock %}

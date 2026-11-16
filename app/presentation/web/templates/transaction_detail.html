@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}交易 #{{ detail.item.id }} · Scribe{% endblock %}
+{% block content %}
+  <header class="page-heading detail-heading">
+    <div><a class="back-link" href="{{ return_to }}">← 返回前一頁</a><p class="eyebrow">Transaction #{{ detail.item.id }}</p><h1>{{ detail.item.merchant or "待辨識交易" }}</h1></div>
+    <div class="hero-amount{% if detail.item.transaction_type.value == 'refund' %} amount-refund{% endif %}">
+      {{ detail.item.amount_minor|money(detail.item.currency) }}
+      {% if detail.item.is_supplementary_card %}<span class="status supplementary">副卡</span>{% endif %}
+    </div>
+  </header>
+  {% if not detail.item.manually_confirmed and not detail.item.manually_ignored %}
+    <form class="quick-confirm-form" method="post" action="/transactions/confirm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="transaction_ids" value="{{ detail.item.id }}">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
+      <input type="hidden" name="continue_to_allocation" value="1">
+      <button type="submit">確認並選擇扣款來源</button>
+    </form>
+  {% elif detail.item.manually_confirmed %}
+    {# Confirming is only the first of two steps, and saying just "已確認"
+       left the second one with no entry point anywhere on this page. #}
+    {% if detail.outcome is none %}
+      <p class="notice">這筆交易已確認，正在等待來源比對——比對決定它是不是你已經手動記過的同一筆錢。</p>
+    {% elif detail.outcome.status.value == "needs_allocation" %}
+      <p class="notice">這筆交易已確認，但還沒選扣款來源，所以還沒有任何金額入帳。
+        <a href="/money/review?event_id={{ detail.outcome.event_id }}">選擇扣款來源 →</a></p>
+    {% elif detail.outcome.funding_wallets %}
+      <p class="notice">這筆已入帳，從{{ detail.outcome.funding_wallets | join("、") }}扣款。
+        已過帳的分錄只會被沖銷、不會被改寫，而銀行通知產生的事件不從這裡沖銷；要調整小錢包之間的金額，請到<a href="/money/accounts">帳戶與小錢包</a>。</p>
+    {% else %}
+      <p class="notice">這筆交易已確認，對應事件目前是「{{ detail.outcome.status.value | label }}」。</p>
+    {% endif %}
+  {% endif %}
+  <div class="detail-grid">
+    <section class="panel">
+      <div class="panel-heading"><h2>人工審核</h2><span>勾選「人工覆寫」才會固定該欄位</span></div>
+      <form class="review-form" method="post" action="/transactions/{{ detail.item.id }}/review">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="expected_updated_at" value="{{ detail.updated_at.isoformat() }}">
+        {% for field, label in [("merchant","商家"),("amount_minor","金額"),("currency","幣別"),("transaction_at","交易時間"),("transaction_type","交易類型")] %}
+          <div class="override-row">
+            <label class="override-toggle"><input class="selection-checkbox" type="checkbox" name="override_fields" value="{{ field }}" {% if field in detail.manual_overrides %}checked{% endif %}>人工覆寫</label>
+            <label>{{ label }}
+              {% if field == "transaction_type" %}
+                <select name="transaction_type">{% for value in transaction_types %}<option value="{{ value.value }}" {% if detail.effective_values[field] == value.value %}selected{% endif %}>{{ value.value | label }}</option>{% endfor %}</select>
+              {% elif field == "transaction_at" %}
+                <input type="datetime-local" name="transaction_at" value="{{ detail.item.transaction_at|datetime_local }}">
+              {% elif field == "amount_minor" %}
+                <input name="amount_minor" inputmode="decimal" value="{{ detail.effective_values[field] | major(detail.effective_values['currency']) if detail.effective_values[field] is not none else '' }}">
+              {% else %}
+                <input name="{{ field }}" value="{{ detail.effective_values[field] if detail.effective_values[field] is not none else '' }}" {% if field == "currency" %}maxlength="3"{% endif %}>
+              {% endif %}
+            </label>
+            <small>解析原值：{% if detail.parsed_values[field] is none %}—{% elif field == "amount_minor" %}{{ detail.parsed_values[field] | major(detail.parsed_values['currency']) }}{% elif field == "transaction_type" %}{{ detail.parsed_values[field] | label }}{% else %}{{ detail.parsed_values[field] }}{% endif %}</small>
+          </div>
+        {% endfor %}
+        <div class="review-flags">
+          {% if detail.item.manually_confirmed %}
+            <input type="hidden" name="manually_confirmed" value="1">
+            <span class="status confirmed">已確認</span>
+          {% endif %}
+          <label><input class="selection-checkbox" type="checkbox" name="manually_ignored" value="1" {% if detail.item.manually_ignored %}checked{% endif %}> 忽略此交易</label>
+        </div>
+        <label>筆記<textarea name="user_note" rows="4">{{ detail.user_note or "" }}</textarea></label>
+        <button type="submit">儲存審核</button>
+      </form>
+    </section>
+    <aside class="stack">
+      <section class="panel compact-panel"><h2>卡片設定</h2>
+        {% if detail.item.card_last_four and detail.item.institution_key %}
+          <p>
+            {{ detail.item.institution_name or detail.item.institution_key }}
+            · •••• {{ detail.item.card_last_four }}
+            {% if detail.item.is_supplementary_card %}<span class="status supplementary">副卡</span>{% endif %}
+          </p>
+          <small>設定會套用到這個 Gmail 帳號內，同銀行且末四碼相同的既有與未來交易。</small>
+          <form method="post" action="/transactions/{{ detail.item.id }}/supplementary-card">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="supplementary" value="{{ "0" if detail.item.is_supplementary_card else "1" }}">
+            <button class="secondary" type="submit">
+              {{ "取消副卡標記" if detail.item.is_supplementary_card else "標記為副卡" }}
+            </button>
+          </form>
+        {% elif not detail.item.card_last_four %}
+          <p>這筆交易沒有卡號末四碼，無法建立卡片設定。</p>
+        {% else %}
+          <p>這封 Email 尚未對應到銀行寄件者規則，無法建立卡片設定。</p>
+        {% endif %}
+      </section>
+      <section class="panel compact-panel"><h2>解析資訊</h2>
+        <dl class="meta-list">
+          <div><dt>解析器</dt><dd>{{ detail.item.parser_name }} {{ detail.item.parser_version }}</dd></div>
+          <div><dt>信心度</dt><dd>{{ (detail.item.confidence * 100)|round|int }}%</dd></div>
+          <div><dt>分類</dt><dd>{{ detail.email_classification.value | label }}</dd></div>
+          <div><dt>原因</dt><dd>{{ detail.classification_reason or "—" }}</dd></div>
+          <div><dt>來源狀態</dt><dd>{{ detail.source_status | label }}</dd></div>
+        </dl>
+        <form method="post" action="/transactions/{{ detail.item.id }}/reparse">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="secondary" type="submit">以本機資料重新解析</button>
+        </form>
+      </section>
+      <section class="panel compact-panel"><h2>來源 Email</h2>
+        <p><a href="/emails/{{ detail.item.email_id }}">{{ detail.item.subject }}</a></p>
+        <small>{{ detail.item.sender }} · {{ detail.email_received_at|local_datetime }}</small>
+      </section>
+    </aside>
+  </div>
+  <section class="panel"><div class="panel-heading"><h2>解析證據</h2></div>
+    <pre class="evidence">{{ detail.extraction_evidence }}</pre>
+    {% if detail.parse_warnings %}<h3>警告</h3><pre class="evidence">{{ detail.parse_warnings }}</pre>{% endif %}
+  </section>
+  <section class="panel"><div class="panel-heading"><h2>Email 純文字</h2><span>只顯示本機保存內容，HTML 不會執行</span></div>
+    <pre class="email-body">{{ detail.body_text or detail.body_summary or "本文未保存。" }}</pre>
+  </section>
+{% endblock %}

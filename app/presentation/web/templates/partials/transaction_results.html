@@ -1,0 +1,23 @@
+<form id="transaction-list-confirm-form" class="batch-confirm-form" method="post"
+      action="/transactions/confirm" data-transaction-selection>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="return_to" value="{{ request_target }}">
+  <input type="hidden" name="continue_to_allocation" value="1">
+  <section class="panel">
+    <div class="panel-heading">
+      <div><h2>{{ result.total }} 筆結果</h2><span>第 {{ result.page }} / {{ result.pages }} 頁</span></div>
+      <div class="panel-heading-actions">
+        <button class="bulk-confirm-button" type="submit"
+                data-bulk-confirm="transaction-list-confirm-form" hidden>確認 0 筆交易</button>
+        <button class="selection-mode-toggle secondary" type="button"
+                data-selection-toggle="transaction-list-confirm-form"
+                aria-pressed="false">選取交易</button>
+      </div>
+    </div>
+    {% with items=result.items, allow_batch_confirm=true %}{% include "partials/transaction_table.html" %}{% endwith %}
+    <nav class="pagination" aria-label="交易分頁">
+      {% if result.page > 1 %}<a href="{{ request.url.include_query_params(page=result.page-1) }}" hx-get="{{ request.url.include_query_params(page=result.page-1) }}" hx-target="#transaction-results" hx-push-url="true">← 上一頁</a>{% endif %}
+      {% if result.page < result.pages %}<a href="{{ request.url.include_query_params(page=result.page+1) }}" hx-get="{{ request.url.include_query_params(page=result.page+1) }}" hx-target="#transaction-results" hx-push-url="true">下一頁 →</a>{% endif %}
+    </nav>
+  </section>
+</form>

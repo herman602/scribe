@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% block title %}{{ view.label }} 預算 · Scribe{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <p class="eyebrow">Monthly budget</p>
+    <h1>{{ view.label }} 預算</h1>
+    <p class="lede">目標與緩衝分開列示：緩衝是不動用的墊底金額，不算在當月可花的目標裡。所有金額都以 {{ view.currency }} 計算，不會跨幣別加總。</p>
+  </div>
+</section>
+
+{% if request.query_params.get("saved") %}<p class="notice">預算目標已儲存。</p>{% endif %}
+{% if request.query_params.get("closed") %}<p class="notice">此月份已結算。</p>{% endif %}
+{% if view.period and view.period.status.value == "closed" %}<p class="notice">此月份已於 {{ view.period.closed_at | local_datetime }} 結算，不再接受新的目標。</p>{% endif %}
+{% if view.events_needing_allocation %}<p class="notice">還有 {{ view.events_needing_allocation }} 筆收支尚未分配，<a href="/money/review">前往待分配</a>。</p>{% endif %}
+
+<section class="panel" aria-label="本月合計">
+  <h2>本月合計</h2>
+  <dl class="summary-grid">
+    <div><dt>目標</dt><dd>{{ view.total_target_minor | money(view.currency) }}</dd></div>
+    <div><dt>已花費（已扣退款）</dt><dd>{{ view.total_spend_minor | money(view.currency) }}</dd></div>
+    <div><dt>剩餘</dt><dd>{{ view.total_remaining_minor | money(view.currency) }}</dd></div>
+    <div><dt>緩衝目標（不含在目標內）</dt><dd>{{ view.total_buffer_minor | money(view.currency) }}</dd></div>
+    <div><dt>緩衝剩餘（已扣超支）</dt><dd>{{ view.total_buffer_remaining_minor | money(view.currency) }}</dd></div>
+    <div><dt>未編列支出</dt><dd>{{ view.unplanned_spend_minor | money(view.currency) }}</dd></div>
+  </dl>
+  {% if view.unplanned_spend_minor %}
+  <p class="notice">有支出沒有對應這個月的預算目標，已列在下表最後並計入「已花費」。</p>
+  {% endif %}
+</section>
+
+{% if not view.categories %}
+<p class="muted">這個月還沒有設定任何預算目標，也還沒有任何支出。</p>
+{% else %}
+<div class="responsive-table-wrap"><table class="data-table responsive-data-table">
+  <caption class="visually-hidden">{{ view.label }} 各分類預算</caption>
+  <thead>
+    <tr><th scope="col">分類</th><th scope="col">目標</th><th scope="col">已花費</th><th scope="col">剩餘</th><th scope="col">超支</th><th scope="col">緩衝目標</th><th scope="col">緩衝剩餘</th><th scope="col">資金來源</th></tr>
+  </thead>
+  <tbody>
+    {% for item in view.categories %}
+    <tr>
+      <td data-label="分類">{{ item.name }}{% if not item.is_planned %} <span class="badge badge-warning">未編列</span>{% endif %}</td>
+      <td data-label="目標">{{ item.target_minor | money(item.currency) }}</td>
+      <td data-label="已花費">{{ item.net_spend_minor | money(item.currency) }}</td>
+      <td data-label="剩餘">{{ item.remaining_minor | money(item.currency) }}</td>
+      <td data-label="超支">{% if item.overspend_minor %}<span class="badge badge-warning">{{ item.overspend_minor | money(item.currency) }}</span>{% else %}—{% endif %}</td>
+      <td data-label="緩衝目標">{{ item.buffer_minor | money(item.currency) }}</td>
+      <td data-label="緩衝剩餘">{{ item.remaining_buffer_minor | money(item.currency) }}</td>
+      <td data-label="資金來源">{{ item.funding_wallet_name or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table></div>
+
+{% for item in view.categories %}{% if item.is_planned %}
+<section class="panel" aria-label="修改 {{ item.name }} 的目標">
+  <h2>修改「{{ item.name }}」的目標</h2>
+  <form method="post" action="/budget/{{ view.label }}/targets">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="currency" value="{{ view.currency }}">
+    <input type="hidden" name="budget_category_id" value="{{ item.budget_category_id }}">
+    <input type="hidden" name="version" value="{{ item.target_version }}">
+    <label>目標
+      <input name="target" inputmode="decimal" value="{{ item.target_minor | major(view.currency) }}" required>
+    </label>
+    <label>緩衝
+      <input name="buffer" inputmode="decimal" value="{{ item.buffer_minor | major(view.currency) }}">
+    </label>
+    <label>資金來源錢包
+      <select name="funding_wallet_id" required>
+        {% for account in accounts %}{% if account.currency == view.currency %}{% set account_wallets = account.wallets | selectattr("is_active") | list %}{% if account_wallets %}<optgroup label="{{ account.display_name }}">{% for wallet in account_wallets %}<option value="{{ wallet.wallet_id }}" {% if wallet.wallet_id == item.funding_wallet_id %}selected{% endif %}>{{ wallet.name }}</option>{% endfor %}</optgroup>{% endif %}{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>月底結餘去向（選填，必須是同一個帳戶內的錢包）
+      <select name="month_end_destination_wallet_id">
+        <option value="">不移動</option>
+        {% for account in accounts %}{% if account.currency == view.currency %}{% set account_wallets = account.wallets | selectattr("is_active") | list %}{% if account_wallets %}<optgroup label="{{ account.display_name }}">{% for wallet in account_wallets %}<option value="{{ wallet.wallet_id }}" {% if wallet.wallet_id == item.month_end_destination_wallet_id %}selected{% endif %}>{{ wallet.name }}</option>{% endfor %}</optgroup>{% endif %}{% endif %}{% endfor %}
+      </select>
+    </label>
+    <button type="submit">儲存修改</button>
+  </form>
+</section>
+{% endif %}{% endfor %}
+{% endif %}
+
+<section class="panel" aria-label="資金來源">
+  <h2>資金來源</h2>
+  {% if not view.wallets %}
+  <p class="muted">尚未建立任何 {{ view.currency }} 的錢包。</p>
+  {% else %}
+  <div class="responsive-table-wrap"><table class="data-table responsive-data-table">
+    <caption class="visually-hidden">錢包餘額與保留金額</caption>
+    <thead>
+      <tr><th scope="col">錢包</th><th scope="col">帳戶</th><th scope="col">餘額</th><th scope="col">已保留</th><th scope="col">可用</th></tr>
+    </thead>
+    <tbody>
+      {% for wallet in view.wallets %}
+      <tr>
+        <td data-label="錢包">{{ wallet.name }}</td>
+        <td data-label="帳戶">{{ wallet.financial_account_name }}</td>
+        <td data-label="餘額">{{ wallet.balance_minor | money(wallet.currency) }}</td>
+        <td data-label="已保留">{{ wallet.reserved_minor | money(wallet.currency) }}</td>
+        <td data-label="可用">{{ wallet.available_minor | money(wallet.currency) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+</section>
+
+{% if view.open_commitments %}
+<section class="panel" aria-label="未結清的保留">
+  <h2>未結清的保留</h2>
+  <p class="muted">保留只是預留資金，本身不會移動任何金額。</p>
+  <div class="responsive-table-wrap"><table class="data-table responsive-data-table">
+    <caption class="visually-hidden">未結清的資金保留</caption>
+    <thead>
+      <tr><th scope="col">商家</th><th scope="col">金額</th><th scope="col">來源錢包</th><th scope="col">結帳帳戶</th><th scope="col">結清方式</th></tr>
+    </thead>
+    <tbody>
+      {% for item in view.open_commitments %}
+      <tr>
+        <td data-label="商家">{{ item.merchant or "—" }}</td>
+        <td data-label="金額">{{ item.outstanding_minor | money(item.currency) }}</td>
+        <td data-label="來源錢包">{{ item.source_wallet_name }}</td>
+        <td data-label="結帳帳戶">{{ item.settlement_account_name }}</td>
+        <td data-label="結清方式">{{ item.fulfillment_mode }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+<section class="panel" aria-label="設定預算目標">
+  <h2>設定預算目標</h2>
+  <form method="post" action="/budget/{{ view.label }}/targets">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="currency" value="{{ view.currency }}">
+    <label>分類
+      <select name="budget_category_id" required>
+        {% for category in categories %}{% if category.is_active %}<option value="{{ category.id }}">{{ category.name }}</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>目標
+      <input name="target" inputmode="decimal" required>
+    </label>
+    <label>緩衝
+      <input name="buffer" inputmode="decimal" value="0">
+    </label>
+    <label>資金來源錢包
+      <select name="funding_wallet_id" required>
+        {% for account in accounts %}{% if account.currency == view.currency %}{% set account_wallets = account.wallets | selectattr("is_active") | list %}{% if account_wallets %}<optgroup label="{{ account.display_name }}">{% for wallet in account_wallets %}<option value="{{ wallet.wallet_id }}">{{ wallet.name }}</option>{% endfor %}</optgroup>{% endif %}{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>月底結餘去向（選填，必須是同一個帳戶內的錢包）
+      <select name="month_end_destination_wallet_id">
+        <option value="">不移動</option>
+        {% for account in accounts %}{% if account.currency == view.currency %}{% set account_wallets = account.wallets | selectattr("is_active") | list %}{% if account_wallets %}<optgroup label="{{ account.display_name }}">{% for wallet in account_wallets %}<option value="{{ wallet.wallet_id }}">{{ wallet.name }}</option>{% endfor %}</optgroup>{% endif %}{% endif %}{% endfor %}
+      </select>
+    </label>
+    <button type="submit">儲存目標</button>
+  </form>
+</section>
+
+<section class="panel" aria-label="管理分類">
+  <h2>管理分類</h2>
+  {% if categories %}
+  {% for category in categories %}
+  <form method="post" action="/budget/categories/{{ category.id }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="version" value="{{ category.version }}">
+    <input type="hidden" name="return_to" value="/budget/{{ view.label }}">
+    <label>名稱
+      <input name="name" value="{{ category.name }}" required>
+    </label>
+    <label>上層分類
+      <select name="parent_id">
+        <option value="">最上層</option>
+        {% for other in categories %}{% if other.id != category.id %}<option value="{{ other.id }}" {% if other.id == category.parent_id %}selected{% endif %}>{{ other.name }}</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label class="checkbox-row"><input class="selection-checkbox" type="checkbox" name="is_active" value="1" {% if category.is_active %}checked{% endif %}> 啟用中</label>
+    <button type="submit">儲存分類</button>
+  </form>
+  {% endfor %}
+  <p class="muted">停用不會刪除任何紀錄；既有支出仍然看得到，只是不能再分配到這個分類。</p>
+  {% endif %}
+  <h2>新增分類</h2>
+  <form method="post" action="/budget/categories">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="return_to" value="/budget/{{ view.label }}">
+    <label>名稱
+      <input name="name" required>
+    </label>
+    <label>上層分類（選填）
+      <select name="parent_id">
+        <option value="">最上層</option>
+        {% for category in categories %}{% if category.is_active %}<option value="{{ category.id }}">{{ category.name }}</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <button type="submit">新增分類</button>
+  </form>
+</section>
+
+{% if close_preview %}
+<section class="panel" aria-label="月底結算">
+  <h2>月底結算</h2>
+  <p class="muted">結算只會在<strong>同一個帳戶內</strong>重新分類錢包餘額，不會產生任何實際轉帳，也不會動用緩衝。</p>
+  {% if close_preview.already_closed %}
+  <p class="notice">這個月份已經結算過，再次送出不會重複掃入。</p>
+  {% endif %}
+  {% if close_preview.manual_transfers %}
+  <p class="notice">下列分類的去向錢包在別的帳戶，需要你自己做一筆真實轉帳；結算不會為它們入帳：
+    {% for line in close_preview.manual_transfers %}<strong>{{ line.category_name }}</strong>{% if not loop.last %}、{% endif %}{% endfor %}
+  </p>
+  {% endif %}
+  <div class="responsive-table-wrap"><table class="data-table responsive-data-table">
+    <caption class="visually-hidden">月底結算預覽</caption>
+    <thead>
+      <tr><th scope="col">分類</th><th scope="col">未花完</th><th scope="col">緩衝剩餘</th><th scope="col">將掃入</th><th scope="col">說明</th></tr>
+    </thead>
+    <tbody>
+      {% for line in close_preview.lines %}
+      <tr>
+        <td data-label="分類">{{ line.category_name }}</td>
+        <td data-label="未花完">{{ line.unspent_minor | money(view.currency) }}</td>
+        <td data-label="緩衝剩餘">{{ line.remaining_buffer_minor | money(view.currency) }}</td>
+        <td data-label="將掃入">{{ line.sweep_minor | money(view.currency) }}</td>
+        <td data-label="說明">
+          {% if line.requires_manual_transfer %}需要實際轉帳{% elif line.destination_wallet_id is none %}未設定去向{% elif line.limited_by_available %}受可用餘額限制{% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  <p><strong>合計掃入：</strong>{{ close_preview.total_sweep_minor | money(view.currency) }}</p>
+  {% if not close_preview.already_closed %}
+  <form method="post" action="/budget/{{ view.label }}/close">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="currency" value="{{ view.currency }}">
+    <button type="submit">結算這個月</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}
